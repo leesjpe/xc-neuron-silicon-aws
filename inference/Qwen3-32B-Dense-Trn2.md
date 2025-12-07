@@ -11,7 +11,8 @@
 진행하기 전에 다음 사항들을 확인하세요.
 
 1.  **인스턴스 실행:** `trn2.48xlarge` 인스턴스가 활성화(`Running`) 상태여야 합니다.
-2.  **(선택 사항이지만 권장) 고속 스토리지 설정:**
+    * 👉 **[가이드: Capacity Block 기반 XC 인스턴스 실행](https://github.com/leesjpe/compute-foundation-on-aws/blob/main/ec2/ec2-dlami-neuron.md)** 
+3.  **(선택 사항이지만 권장) 고속 스토리지 설정:**
     * 모델 로딩 속도와 체크포인트 저장 속도를 높이기 위해 로컬 NVMe SSD (RAID 0) 사용을 강력히 권장합니다.
     * 아직 설정하지 않으셨다면, 아래 가이드를 먼저 진행해 주세요.
     * 👉 **[가이드: 고속 스토리지 설정 (NVMe RAID 0)](../storage/local-nvme-setup.md)**
