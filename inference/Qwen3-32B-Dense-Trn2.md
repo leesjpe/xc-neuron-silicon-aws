@@ -50,7 +50,9 @@ docker exec -it <Container ID> bash
 ```
 
 ## ⚙️ Step 3: 환경 변수 설정 및 vllm server 실행
+
 3-2 는 BF16 기준의 [Qwen 3 32B Model](https://huggingface.co/Qwen/Qwen3-32B) 추론을 위한 vllm 서버를 실행 합니다. 
+
 3-2 과정은  10~15 소요되며 아래와 같이 로그가 보이면 컴파일 및 서버 시작 완료 ☕️
 
 ```bash
