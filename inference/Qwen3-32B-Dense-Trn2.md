@@ -72,8 +72,18 @@ VLLM_USE_V1=0 vllm serve $MODEL_ID \
 ```
 <img width="1294" height="845" alt="Screenshot 2025-12-06 at 9 17 48 PM" src="https://github.com/user-attachments/assets/4cf45802-3e9a-4290-b0c0-e5303f384e40" />
 
-
-
+```bash 
+# 3-2. 서버 실행 (외부 접속 허용) FP8
+VLLM_USE_V1=0 vllm serve $MODEL_ID \
+    --tensor-parallel-size 64 \
+    --max-num-seqs 1 \
+    --max-model-len 6400 \
+    --quantization fp8 \            # [핵심 1] 모델 가중치/연산을 FP8로 수행
+    --kv-cache-dtype fp8 \          # [핵심 2] KV Cache도 FP8로 압축
+    --override-neuron-config '{"save_sharded_checkpoint": true}' \
+    --host 0.0.0.0 \
+    --port 8000
+```
 
 
 ## 🧪 Step 4: 추론 테스트 (Inference)
