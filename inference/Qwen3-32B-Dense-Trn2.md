@@ -7,6 +7,8 @@ aws neuron 공식문서의 [Tutorial](https://awsdocs-neuron.readthedocs-hosted.
 
 * aws-neuron Github 의 [deep-learning-contianers](https://github.com/aws-neuron/deep-learning-containers?tab=readme-ov-file#vllm-inference-neuronx) 의 vllm-inference-neuronx 에서 컨테이너 별 vllm Framework 버전, Neuron SDK 버전, ECR Public URL을 확인 할 수 있습니다.
 
+* vLLM V0 방식을 따르며 [neuron-to-upstreaming](https://github.com/aws-neuron/upstreaming-to-vllm) 방식으로 vLLM 서버를 배포합니다. 
+
 ---
 
 ## 📋 Prerequisites (사전 준비)
@@ -49,19 +51,19 @@ docker run -d -it \
 docker exec -it <Container ID> bash
 ```
 
-## ⚙️ Step 3: 환경 변수 설정 및 vllm server 실행
+### ⚙️ Step 3-1: 환경 변수 설정 및 vllm server 실행
 
 3-2 는 BF16 기준의 [Qwen 3 32B Model](https://huggingface.co/Qwen/Qwen3-32B) 추론을 위한 vllm 서버를 실행 합니다. 
 
 3-2 과정은  10~15 소요되며 아래와 같이 로그가 보이면 컴파일 및 서버 시작 완료 ☕️
 
 ```bash
-# 3-1. 환경 변수 설정
+# 환경 변수 설정
 export VLLM_NEURON_FRAMEWORK="neuronx-distributed-inference"
 export NEURON_COMPILED_ARTIFACTS="/data/Qwen-32B-BS1-SL6k-TP64"
 export MODEL_ID="Qwen/Qwen3-32B"
 
-# 3-2. 서버 실행 (외부 접속 허용)
+# 서버 실행 (8000 포트 통한 외부 접속 허용, 특정 IP 로 제한 권장)
 VLLM_USE_V1=0 vllm serve $MODEL_ID \
     --tensor-parallel-size 64 \
     --max-num-seqs 1 \
@@ -71,6 +73,10 @@ VLLM_USE_V1=0 vllm serve $MODEL_ID \
     --port 8000
 ```
 <img width="1294" height="845" alt="Screenshot 2025-12-06 at 9 17 48 PM" src="https://github.com/user-attachments/assets/4cf45802-3e9a-4290-b0c0-e5303f384e40" />
+
+### ⚙️ Step 3-2: 추론 중 생기는 데이터를 FP8로 압축
+
+BF16 모델 가중치 + FP8 KV 캐시 조합으로 실행되며, 추론 중 생기는 데이터를 FP8로 압축.
 
 ```bash 
 # 3-2. 서버 실행 (외부 접속 허용) FP8
@@ -84,7 +90,6 @@ VLLM_USE_V1=0 vllm serve $MODEL_ID \
     --host 0.0.0.0 \
     --port 8000
 ```
-
 
 ## 🧪 Step 4: 추론 테스트 (Inference)
 ```bash
