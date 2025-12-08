@@ -1,4 +1,4 @@
-# Serving Qwen 3/2.5 on Trainium2 with vLLM (NxD)
+# Serving Qwen3 on Trainium2 with vLLM (NxD)
 
 이 가이드는 **AWS Trainium2 (`trn2.48xlarge`)** 인스턴스에서 **vLLM**과 **Neuronx Distributed (NxD)** 아키텍처를 사용하여 **Qwen 3 (32B)** 모델을 서빙하는 방법을 설명합니다.
 
