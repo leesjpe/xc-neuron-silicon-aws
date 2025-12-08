@@ -78,8 +78,8 @@ VLLM_USE_V1=0 vllm serve $MODEL_ID \
     --tensor-parallel-size 64 \
     --max-num-seqs 1 \
     --max-model-len 6400 \
-    --quantization fp8 \           
-    --kv-cache-dtype fp8 \          
+    --quantization fp8 \
+    --kv-cache-dtype fp8 \
     --override-neuron-config '{"save_sharded_checkpoint": true}' \
     --host 0.0.0.0 \
     --port 8000
