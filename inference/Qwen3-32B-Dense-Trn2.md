@@ -7,7 +7,7 @@ aws neuron 공식문서의 [Tutorial](https://awsdocs-neuron.readthedocs-hosted.
 
 * aws-neuron Github 의 [deep-learning-contianers](https://github.com/aws-neuron/deep-learning-containers?tab=readme-ov-file#vllm-inference-neuronx) 의 vllm-inference-neuronx 에서 컨테이너 별 vLLM Framework 버전, Neuron SDK 버전, ECR Public URL을 확인 할 수 있습니다.
 
-* vLLM V0 방식을 따르며 [neuron-to-upstreaming](https://github.com/aws-neuron/upstreaming-to-vllm) 방식으로 vLLM 서버를 배포합니다. 
+* vLLM V0 방식을 따르며 [neuron-to-upstreaming](https://github.com/aws-neuron/upstreaming-to-vllm) 기반으로 vLLM 서버를 배포합니다. 
 
 ---
 
