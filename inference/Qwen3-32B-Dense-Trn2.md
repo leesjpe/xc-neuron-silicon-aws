@@ -104,4 +104,49 @@ curl http://localhost:8000/v1/completions \
 ```
 <img width="1295" height="316" alt="Screenshot 2025-12-06 at 10 38 58 PM" src="https://github.com/user-attachments/assets/451cf358-9bc8-45ab-bc77-fb491cb57a6d" />
 
+## 📊 Performance Benchmarking (via Host)
+
+이 가이드에서는 **호스트 머신**에서 컨테이너에서 실행 중인 vLLM 서버를 벤치마킹하는 방법을 설명합니다. 호스트에서 벤치마크를 실행하면 Python 버전 충돌을 방지하고 리소스 분리를 ​​보장할 수 있습니다.
+
+### 1. Prerequisites
+`llmperf` 라이브러리는 **Python 3.8 ~ 3.10** 환경을 권장합니다. 시스템 기본 Python 버전이 너무 높거나(3.11+), 패키지가 꼬이는 것을 방지하기 위해 `conda` 가상환경 사용을 권장합니다.
+
+```bash
+# 1. Host 의 가상환경 활성화
+source /opt/aws_neuronx_venv_pytorch_2_8_nxd_inference/bin/activate
+
+# 2. Clone and install llmperf
+cd /opt
+git clone https://github.com/ray-project/llmperf.git
+cd llmperf
+pip install -e .
+
+```
+설치 완료 후에 아래 명령어를 Host 에서 실행
+
+```bash
+export OPENAI_API_BASE="http://localhost:8000/v1"
+export OPENAI_API_KEY=dummy
+
+python token_benchmark_ray.py \
+    --model "Qwen/Qwen3-32B" \
+    --mean-input-tokens 128 \
+    --stddev-input-tokens 0 \
+    --mean-output-tokens 512 \
+    --stddev-output-tokens 0 \
+    --max-num-completed-requests 10 \
+    --timeout 1200 \
+    --num-concurrent-requests 1 \
+    --results-dir /tmp/results \
+    --llm-api openai \
+    --additional-sampling-params '{}'
+
+```
+
+<img width="464" height="1473" alt="Screenshot 2025-12-08 at 9 12 32 PM" src="https://github.com/user-attachments/assets/ce17baea-c904-42a4-bf9d-b848db455af5" />
+
+
+
+
+
 
