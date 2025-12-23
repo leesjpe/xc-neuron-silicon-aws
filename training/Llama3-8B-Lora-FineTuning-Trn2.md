@@ -257,46 +257,66 @@ import os
 from vllm import LLM, SamplingParams
 from vllm.lora.request import LoRARequest
 
-# 경로 설정
-MODEL_PATH = "/home/ubuntu/tp_llama3_8b_lora_finetunemodels/llama3-8b/" # Hgging face base model 경로
-LORA_PATH_1 = "/home/ubuntu/tp_llama3_8b_lora_finetunelora_adapters/" # .pt 파일들과 config가 있는 경로
+# ==========================================
+# [수정됨] 사용자 환경 경로 반영
+# ==========================================
+MODEL_PATH = "/home/ubuntu/tp_llama3_8b_lora_finetune/models/llama3-8b"
+LORA_CKPT_JSON = "/home/ubuntu/tp_llama3_8b_lora_finetune/lora_adapters.json"
+COMPILED_MODEL_PATH = "/home/ubuntu/tp_llama3_8b_lora_finetune/neuron_cache/"
 
+# 환경 변수 설정
+os.environ["NEURON_COMPILED_ARTIFACTS"] = COMPILED_MODEL_PATH
 os.environ["VLLM_USE_V1"] = "1"
 
-# 프롬프트 (Instruction 포맷 준수)
-prompts = ["""### Instruction:
-Write a romantic love letter about a potato.
+# Sample prompts.
+prompts = [
+    "The president of the United States is"
+]
 
-### Response:
-"""]
+# Create a sampling params object.
+sampling_params = SamplingParams(top_k=1)
 
-# 샘플링 파라미터
-sampling_params = SamplingParams(top_k=1, max_tokens=1024)
+# [유지됨] 요청하신 override_neuron_config 구조
+override_neuron_config = {
+    "skip_warmup": True,
+    "lora_ckpt_json": LORA_CKPT_JSON,
+}
 
-# LLM 초기화 (Multi-LoRA)
+# Create an LLM with multi-LoRA serving.
+# [유지됨] additional_config 포함한 초기화 코드
 llm = LLM(
     model=MODEL_PATH,
     max_num_seqs=2,
-    max_model_len=4096,
+    max_model_len=4096,           # 64는 너무 짧아 4096으로 수정함 (안정성 위함)
     tensor_parallel_size=32,
-    device="neuron",
-    override_neuron_config={
-        "sequence_parallel_enabled": False,
-        "lora_modules": {"lora_id_1": LORA_PATH_1}, # 정적(Static) 로딩
+    additional_config={
+        "override_neuron_config": override_neuron_config
     },
     enable_lora=True,
     max_loras=2,
+    max_cpu_loras=4,
+    enable_prefix_caching=False,
+    enable_chunked_prefill=False,
 )
 
-# 생성 요청
-lora_req_1 = LoRARequest("lora_id_1", 1, LORA_PATH_1)
+"""
+Only the lora_name needs to be specified.
+The lora_id and lora_path are supplied at the LLM class/server initialization, after which the paths are
+handled by NxD Inference.
+"""
+
+# lora_id_1 is in HBM (Defined in JSON)
+lora_req_1 = LoRARequest("lora_id_1", 1, lora_path="/home/ubuntu/tp_llama3_8b_lora_finetune/lora_adapters/llama3_8b_lora") # Path is empty as per JSON usage
+# lora_id_3 is in host memory (Defined in JSON)
+#lora_req_2 = LoRARequest("lora_id_3", 2, lora_path="") # Path is empty as per JSON usage
+
+#outputs = llm.generate(prompts, sampling_params, lora_request=[lora_req_1, lora_req_2])
 outputs = llm.generate(prompts, sampling_params, lora_request=[lora_req_1])
 
-# 결과 출력
 for output in outputs:
     prompt = output.prompt
     generated_text = output.outputs[0].text
-    print(f"Prompt: {prompt!r}\nGenerated text: {generated_text!r}")
+    print(f"Prompt: {prompt!r}, Generated text: {generated_text!r}")
 
 ```
 
