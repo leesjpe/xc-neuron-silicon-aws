@@ -53,7 +53,6 @@ wget https://raw.githubusercontent.com/aws-neuron/neuronx-distributed/main/test/
 ```bash
 python3 -m pip install -r requirements.txt
 python3 -m pip install -r requirements_ptl.txt
-python3 -m pip install nltk blobfile tiktoken "huggingface_hub<1.0"
 
 # 쉘 스크립트 실행 권한 부여
 chmod +x test_llama_lora_finetune.sh
@@ -77,6 +76,13 @@ huggingface-cli login
 huggingface-cli download meta-llama/Meta-Llama-3-8B --local-dir /home/ubuntu/models/llama3-8b
 
 ```
+허깅페이스에서 다운로드 하였기에 체크포인트 변환은 생략 하지만 만약 Meta 형식으로 다운로드 하였다면 아래와 같이 HF 형식으로 변경 필요
+```bash
+pip install blobfile tiktoken
+cd ~/examples/tp_llama3_8b_lora_finetune
+python convert_llama_weights_to_hf.py --input_dir models/Llama-3-8B/ --model_size 8B --llama_version 3 --output_dir models/Llama-3-8B-hf
+```
+
 
 ### 2.2. 체크포인트를 Neuron 포맷(NXD)으로 변환
 
@@ -84,6 +90,7 @@ huggingface-cli download meta-llama/Meta-Llama-3-8B --local-dir /home/ubuntu/mod
 
 1. **`convert_checkpoints.py` 생성/수정:**
 기존 스크립트를 아래의 최적화된 코드로 덮어씁니다.
+기존 다운로드 받은 스크립트는 .bin 파일을 기준으로 작성되었으나 현재 HF 는 model.safetensors 포맷이기에 아래 스크립트로 변경하여 Hugging Face(.safetensors)를 **메모리(RAM)**에 로드하자마자 → 즉시 Neuron 포맷으로 변환해서 저장 함.
 ```python
 import argparse
 import torch
@@ -115,22 +122,23 @@ if __name__ == "__main__":
 Hugging Face 포맷을 Neuron Distributed (Megatron 스타일) 포맷으로 변환합니다.
 ```bash
 python3 convert_checkpoints.py \
-  --hw_backend trn2 \
-  --tp_size 32 \
-  --qkv_linear 1 \
-  --kv_size_multiplier 4 \
-  --convert_from_full_state \
-  --config config.json \
-  --input_dir /home/ubuntu/models/llama3-8b \
-  --output_dir /home/ubuntu/models/llama3-8b-nxdt-tp32/pretrained_weight/
+--hw_backend trn2 \
+--tp_size 32 \
+--qkv_linear 1 \
+--kv_size_multiplier 4 \
+--convert_from_full_state \
+--config config.json \
+--input_dir /home/ubuntu/tp_llama3_8b_lora_finetune/models/llama3-8b \
+--output_dir /home/ubuntu/tp_llama3_8b_lora_finetune/models/llama3_8b_tp32/pretrained_weight/
 
 ```
 
 
 * `--tp_size 32`: 타겟 Tensor Parallelism 크기 (Trn2 노드 사양에 맞춤).
 * `--hw_backend trn2`: 타겟 하드웨어 설정.
+* `--qkv_linear`: GQA(Grouped-Query Attentioin) 모델은 1, Non GQA 모델은 0
 
-
+이미지
 
 ---
 
@@ -150,7 +158,6 @@ HF_TOKEN='your_token_here'
 # 전체 Epoch를 돌리기 위해 step 제한을 해제(-1)합니다.
 TOTAL_STEPS=-1 
 TOTAL_EPOCHS=3
-
 ```
 
 > **주의:** 스크립트 내에 `max_train_samples` 옵션이 있다면 주석 처리하거나 삭제하여 전체 데이터셋을 학습하도록 해야 합니다.
@@ -159,7 +166,6 @@ TOTAL_EPOCHS=3
 
 ```bash
 ./test_llama_lora_finetune.sh
-
 ```
 
 **완료 확인:**
@@ -201,14 +207,12 @@ docker run -d -it --privileged --shm-size=32g \
 
 ### 4.2. vLLM용 LoRA 어댑터 준비 (중요)
 
-Neuron 기반 vLLM은 분할된 `.pt` 파일들이 `lora/model`과 같은 하위 폴더가 아닌, 어댑터 디렉토리 최상위에 위치하기를 기대합니다.
+Neuron 기반 vLLM은 분할된 `.pt` 파일들이 `lora/model`과 같은 하위 폴더가 아닌, 어댑터 디렉토리 최상위에 위치 해야 합니다.
 
 1. **체크포인트 파일 이동:**
 ```bash
-cd /home/ubuntu/lora_adapters/llama3-8b-dolly-lora/
-mv lora/model/*.pt .
-rm -rf lora
-
+cd /home/ubuntu/tp_llama3_8b_lora_finetune/lora_adapter/lora/model
+mv *.pt ../../
 ```
 
 
@@ -228,19 +232,36 @@ Neuron vLLM은 Q, K, V 레이어를 물리적으로 분리하여 처리합니다
 
 ```
 
+### 4.3. 추론 TEST
 
+1. ** vllm 환경을 위한 Docker container 실행
 
-### 4.3. 추론 스크립트 실행 (`neuron_multi_lora.py`)
+```bash
+docker pull public.ecr.aws/neuron/pytorch-inference-vllm-neuronx:<image_tag>
 
-LoRA 어댑터를 적용하여 모델을 서빙하는 Python 스크립트를 작성합니다.
+docker run \
+-d -it \
+-v /home/ubuntu/:/home/ubuntu/ \
+--privileged \
+--cap-add SYS_ADMIN \
+--cap-add IPC_LOCK \
+-p 8000:8000 \
+--name <server name> \
+<Image ID>
+```
+
+2. **LoRA 어댑터를 적용하여 모델을 서빙하는 Python 스크립트를 작성합니다. (`test_lora_inference.py`)**
 
 ```python
+import os
 from vllm import LLM, SamplingParams
 from vllm.lora.request import LoRARequest
 
 # 경로 설정
-MODEL_PATH = "/home/ubuntu/models/llama3-8b/"
-LORA_PATH_1 = "/home/ubuntu/lora_adapters/llama3-8b-dolly-lora/" # .pt 파일들과 config가 있는 경로
+MODEL_PATH = "/home/ubuntu/tp_llama3_8b_lora_finetunemodels/llama3-8b/" # Hgging face base model 경로
+LORA_PATH_1 = "/home/ubuntu/tp_llama3_8b_lora_finetunelora_adapters/" # .pt 파일들과 config가 있는 경로
+
+os.environ["VLLM_USE_V1"] = "1"
 
 # 프롬프트 (Instruction 포맷 준수)
 prompts = ["""### Instruction:
@@ -278,6 +299,7 @@ for output in outputs:
     print(f"Prompt: {prompt!r}\nGenerated text: {generated_text!r}")
 
 ```
+
 
 ### 4.4. 트러블슈팅 체크리스트
 
