@@ -215,10 +215,11 @@ cd /home/ubuntu/tp_llama3_8b_lora_finetune/lora_adapter/lora/model
 mv *.pt ../../
 ```
 
-
 *이제 `adapter_config.json`과 `*.pt` 파일들이 같은 위치에 있어야 합니다.*
 2. **`adapter_config.json` 수정:**
+
 Neuron vLLM은 Q, K, V 레이어를 물리적으로 분리하여 처리합니다. 따라서 `target_modules` 이름을 이에 맞춰 수정해야 합니다.
+
 **변경 전:**
 ```json
 "target_modules": ["qkv_proj"],
@@ -274,7 +275,7 @@ prompts = [
 ]
 
 # Create a sampling params object.
-sampling_params = SamplingParams(top_k=1)
+sampling_params = SamplingParams(top_k=1, max_tokens=4096)
 
 # [유지됨] 요청하신 override_neuron_config 구조
 override_neuron_config = {
