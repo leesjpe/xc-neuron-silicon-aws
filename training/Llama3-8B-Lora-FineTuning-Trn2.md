@@ -1,12 +1,6 @@
-작성해주신 영문 매뉴얼을 바탕으로, 한국 개발자들이 이해하기 쉽도록 기술 용어를 다듬어 한글 버전으로 번역했습니다.
-
-Github `README.md` 등에 그대로 복사해서 사용하시면 됩니다.
-
----
-
 # AWS Trainium2 기반 Llama 3 8B Fine-tuning
 
-이 리포지토리는 **AWS Trainium2 (Trn2)** 인스턴스에서 **LoRA (Low-Rank Adaptation)** 및 **Tensor Parallelism (텐서 병렬화)**을 사용하여 **Llama 3 8B** 모델을 파인튜닝하는 단계별 가이드를 제공합니다. 또한 Neuron 기반 **vLLM**을 사용하여 파인튜닝된 모델을 서빙하는 방법도 다룹니다.
+이 가이드는 **AWS Trainium2 (Trn2)** 인스턴스에서 **LoRA (Low-Rank Adaptation)** 및 **Tensor Parallelism (텐서 병렬화)**을 사용하여 **Llama 3 8B** 모델을 파인튜닝하는 단계별 가이드를 제공합니다. 또한 Neuron 기반 **vLLM**을 사용하여 파인튜닝된 모델을 서빙하는 방법도 다룹니다.
 
 ## Prerequisites
 
