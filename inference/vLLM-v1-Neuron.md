@@ -95,6 +95,7 @@ python -m vllm.entrypoints.openai.api_server \
 ```
 
 *주의: vllm.entrypoints.openai.api_server 다음 릴리즈에서 Deprecated 될 예정 [링크](https://docs.vllm.ai/en/latest/design/arch_overview/#openai-compatible-api-server)
+
 *주의: Neuron 환경에서는 `--block-size`를 128로 설정하는 것이 권장됩니다.*
 
 ---
