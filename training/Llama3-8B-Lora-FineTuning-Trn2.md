@@ -253,7 +253,7 @@ from vllm import LLM, SamplingParams
 from vllm.lora.request import LoRARequest
 
 # ==========================================
-# [수정됨] 사용자 환경 경로 반영
+# 사용자 환경 경로 반영
 # ==========================================
 MODEL_PATH = "/home/ubuntu/tp_llama3_8b_lora_finetune/models/llama3-8b"
 LORA_CKPT_JSON = "/home/ubuntu/tp_llama3_8b_lora_finetune/lora_adapters.json"
@@ -271,14 +271,14 @@ prompts = [
 # Create a sampling params object.
 sampling_params = SamplingParams(top_k=1, max_tokens=4096)
 
-# [유지됨] 요청하신 override_neuron_config 구조
+# override_neuron_config 구조
 override_neuron_config = {
     "skip_warmup": True,
     "lora_ckpt_json": LORA_CKPT_JSON,
 }
 
 # Create an LLM with multi-LoRA serving.
-# [유지됨] additional_config 포함한 초기화 코드
+# additional_config 포함한 초기화 코드
 llm = LLM(
     model=MODEL_PATH,
     max_num_seqs=2,
