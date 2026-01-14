@@ -131,8 +131,6 @@ pip install -e . --no-deps
 * 버전 수정: llmperf에 설정된 파이썬 상한선( <3.11)을 제거하여 현재 사용 중인 3.12.3 환경에서 설치가 거부되는 것을 방지.
 * --no-deps 설정: 이미 vLLM 환경에 설치된 패키지들과 llmperf 간의 불필요한 버전 충돌(Pydantic 등) 검사를 건너뛰고 설치.
 
-![alt text](<Screenshot 2026-01-14 at 3.23.54 PM.png>)
-
 설치 완료 후에 아래 명령어를 Host 에서 실행
 
 ```bash
