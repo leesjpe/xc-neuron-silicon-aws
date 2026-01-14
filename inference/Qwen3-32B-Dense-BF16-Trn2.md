@@ -1,6 +1,6 @@
 # Serving Qwen3 30B BF16 on Trainium2 with vLLM (NxD)
 
-이 가이드는 **AWS Trainium2 (`trn2.48xlarge`)** 인스턴스에서 **vLLM**과 **Neuronx Distributed (NxD)** 아키텍처를 사용하여 **Qwen 3 (32B)** 모델을 서빙하는 방법을 설명합니다.
+이 가이드는 **AWS Trainium2 (`trn2.48xlarge`)** 인스턴스에서 **vLLM**과 **Neuronx Distributed (NxD)** 아키텍처를 사용하여 [**Qwen 3 (32B)**](https://huggingface.co/Qwen/Qwen3-32B) 모델을 서빙하는 방법을 설명합니다.
 aws neuron 공식문서의 [Tutorial](https://awsdocs-neuron.readthedocs-hosted.com/en/latest/libraries/nxd-inference/tutorials/sd-inference-tutorial.html) 을 기반으로 구성 되었습니다. 
 
 **Quickstart using Docker** vLLM이 사전 설치된 AWS Neuron 포크 버전의 사전 구성된 딥 러닝 컨테이너(DLC)를 활용합니다. 
