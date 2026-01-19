@@ -154,7 +154,8 @@ python3 convert_checkpoints.py \
 * `--qkv_linear`: GQA(Grouped-Query Attentioin) 모델은 1, Non GQA 모델은 0
 
 [실행결과]
-이미지 별도 붙여넣기
+<img width="1107" height="630" alt="Screenshot 2026-01-16 at 3 56 55 PM" src="https://github.com/user-attachments/assets/505bbe66-4282-4cd5-9b34-77bced621c41" />
+
 
 ---
 
