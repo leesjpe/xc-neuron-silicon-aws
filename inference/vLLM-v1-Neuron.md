@@ -83,20 +83,20 @@ export VLLM_TARGET_DEVICE=neuron
 
 ```
 
-### 서버 실행 예시
+### Online 추론 예시
 
 ```bash
-python -m vllm.entrypoints.openai.api_server \
-    --model <모델_경로_또는_ID> \
-    --max-model-len 4096 \
-    --block-size 128 \
-    --device neuron
+python3 -m vllm.entrypoints.openai.api_server \
+    --model "TinyLlama/TinyLlama-1.1B-Chat-v1.0" \
+    --tensor-parallel-size 2 \
+    --max-model-len 128 \
+    --max-num-seqs 4 \
+    --block-size 32 \
+    --port 8000
 
 ```
 
 *주의: vllm.entrypoints.openai.api_server 다음 릴리즈에서 Deprecated 될 예정 [링크](https://docs.vllm.ai/en/latest/design/arch_overview/#openai-compatible-api-server)
-
-*주의: Neuron 환경에서는 `--block-size`를 128로 설정하는 것이 권장됩니다.*
 
 ---
 
