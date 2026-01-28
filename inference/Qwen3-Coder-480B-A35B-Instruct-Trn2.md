@@ -115,6 +115,10 @@ VLLM_NEURON_FRAMEWORK='neuronx-distributed-inference' python -m vllm.entrypoints
   --port=8000
 ```
 
+<img width="1067" height="801" alt="Screenshot 2026-01-28 at 10 39 59 AM" src="https://github.com/user-attachments/assets/4cc59b6f-5351-4222-9bda-12fdc26a72e6" />
+
+
+
 ---
 
 ## 🧪 4. 추론 테스트 (Tool Calling Demo)
@@ -194,6 +198,9 @@ except Exception as e:
 ```bash
 python3 test_inference.py
 ```
+<img width="800" height="906" alt="Screenshot 2026-01-28 at 10 43 13 AM" src="https://github.com/user-attachments/assets/ff42a804-713b-4738-a602-2032c03cf736" />
+
+
 
 ---
 
