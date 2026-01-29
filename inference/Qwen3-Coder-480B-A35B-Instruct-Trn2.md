@@ -109,7 +109,7 @@ VLLM_NEURON_FRAMEWORK='neuronx-distributed-inference' python -m vllm.entrypoints
     "token_generation_buckets": [16384],
     "torch_dtype": "bfloat16",
     "tp_degree": 64
-  }' \
+  }}' \
   --no-enable-chunked-prefill \
   --no-enable-prefix-caching \
   --port=8000
