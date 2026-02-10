@@ -11,7 +11,7 @@ AWS Neuron 공식문서의 [Llama 3.3 70B 가이드](https://awsdocs-neuron.read
 - **컨텍스트 길이**: 최대 128K (실제 사용은 하드웨어 제약)
 
 **⚠️ 중요: 사용된 인스턴스**
-- Llama 3.1 70B는 약 140GB 모델로 **trn2.48xlarge (32 NeuronCores) 에서 진행**
+- Llama 3.1 70B는 약 140GB 모델로 **trn2.48xlarge (64 NeuronCores) 에서 진행**
 - trn2.48xlarge는 64개 논리 코어 (4 NeuronCores × 16)
 
 **🔄 2단계 프로세스:**
