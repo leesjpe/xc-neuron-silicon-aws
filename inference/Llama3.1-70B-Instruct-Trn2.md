@@ -14,11 +14,6 @@ AWS Neuron 공식문서의 [Llama 3.3 70B 가이드](https://awsdocs-neuron.read
 - Llama 3.1 70B는 약 140GB 모델로 **trn2.48xlarge (64 NeuronCores) 에서 진행**
 - trn2.48xlarge는 64개 논리 코어 (4 NeuronCores × 16)
 
-**🔄 2단계 프로세스:**
-1. **모델 컴파일** (첫 실행 시 1회, 20-50분 소요)
-2. **vLLM 서버 실행** (컴파일된 모델 재사용)
-
-
 
 ## ✅ Prerequisites (사전 준비)
 
@@ -142,13 +137,48 @@ Llama-3.1-70B-Instruct/
 └── special_tokens_map.json
 ```
 
+**🔄 실행 방법:**
+
+이 가이드는 **권장 방법 (2단계 프로세스)**을 설명합니다:
+1. **모델 컴파일** (첫 실행 시 1회, 20-50분 소요) - 명시적 컴파일로 디버깅 용이
+2. **vLLM 서버 실행** (컴파일된 모델 재사용) - 빠른 재시작 (1-3분)
+
+**💡 Quick Start (자동 컴파일):**
+1,2 를 진행 하기 전 빠르게 테스트하려면 vLLM 서버가 자동으로 컴파일하도록 할 수 있습니다:
+
+**기본 실행:**
+```bash
+# 환경 변수 설정
+export VLLM_NEURON_FRAMEWORK="neuronx-distributed-inference"
+
+# vLLM 서버 실행 (첫 실행 시 자동 컴파일, 20-50분 소요)
+python -m vllm.entrypoints.openai.api_server \
+    --model /home/ubuntu/models/Llama-3.1-70B-Instruct \
+    --tensor-parallel-size 64 \
+    --max-num-seqs 1 \
+    --max-model-len 16384 \
+    --block-size 16 \
+    --port 8000
+```
 
 
-## 2. 🔧 모델 컴파일 (첫 실행 시 1회만)
+**참고:** 
+- `--device neuron`은 vLLM 0.13에서 지원하지 않음 (자동 감지)
+- 최적화 설정은 JSON 한 줄로 작성 (줄바꿈 없이)
+- 컴파일된 모델은 자동으로 저장되어 재사용됨
 
-Llama 3.1 70B를 Trainium2에서 실행하려면 먼저 모델을 컴파일해야 합니다. 이 과정은 첫 실행 시 1회만 수행하며, 컴파일된 모델은 재사용됩니다.
+하지만 **프로덕션 환경에서는 사전 컴파일을 강력히 권장**합니다:
+- 컴파일 실패 시 디버깅 용이
+- 서버 시작 시간 단축 (1-3분)
+- 컴파일 로그 명확히 확인 가능
+- AWS 공식 권장사항
 
-### Step 2-1: 컴파일 스크립트 생성
+## 2. 🔧 1단계: 모델 컴파일
+
+`inference_demo` 도구를 사용하여 모델을 컴파일합니다. 이 과정은 첫 실행 시 1회만 수행하며, 컴파일된 모델은 재사용됩니다.
+
+
+### Step 2-1: 컴파일 스크립트 (`compile_model.sh`) 생성
 
 작업 디렉토리를 생성하고 컴파일 스크립트를 작성합니다.
 
@@ -186,7 +216,7 @@ echo "=========================================="
 echo "Model path: $MODEL_PATH"
 echo "Compiled model will be saved to: $COMPILED_MODEL_PATH"
 echo "TP Degree: $TP_DEGREE"
-echo "Max context length: 12288 tokens"
+echo "Max context length: 16384 tokens"
 echo ""
 echo "⏱️  This will take approximately 20-50 minutes on first run."
 echo "=========================================="
@@ -204,10 +234,10 @@ inference_demo \
         --local_ranks_size $TP_DEGREE \
         --tp-degree $TP_DEGREE \
         --batch-size 1 \
-        --max-context-length 12288 \
-        --seq-len 12800 \
+        --max-context-length 16384 \
+        --seq-len 16384 \
         --on-device-sampling \
-        --top-k 1 \
+        --top-k 20 \
         --do-sample \
         --fused-qkv \
         --sequence-parallel-enabled \
@@ -217,8 +247,8 @@ inference_demo \
         --cc-pipeline-tiling-factor 1 \
         --pad-token-id 2 \
         --enable-bucketing \
-        --context-encoding-buckets 2048 4096 8192 12288 \
-        --token-generation-buckets 2048 4096 8192 12800 \
+        --context-encoding-buckets 256 512 1024 2048 4096 8192 10240 12288 16384 \
+        --token-generation-buckets 256 512 1024 2048 4096 8192 10240 12288 16384 \
         --prompt "What is AWS Trainium?" 2>&1 | tee compile.log
 
 echo ""
@@ -253,8 +283,8 @@ chmod +x compile_model.sh
 - `--tp-degree 64`: Tensor Parallelism 64 (trn2.48xlarge의 64개 논리 코어)
 
 **컨텍스트 및 시퀀스 설정:**
-- `--max-context-length 12288`: 최대 컨텍스트 길이 (12K 토큰)
-- `--seq-len 12800`: 최대 시퀀스 길이 (컨텍스트 + 생성)
+- `--max-context-length 16384`: 최대 컨텍스트 길이 (16K 토큰)
+- `--seq-len 16384`: 최대 시퀀스 길이 (컨텍스트 + 생성)
 - `--batch-size 1`: 배치 크기 (동시 처리 요청 수)
 
 **성능 최적화 옵션:**
@@ -267,8 +297,8 @@ chmod +x compile_model.sh
 
 **버킷팅 (동적 배치 최적화):**
 - `--enable-bucketing`: 버킷팅 활성화
-- `--context-encoding-buckets 2048 4096 8192 12288`: 컨텍스트 인코딩용 버킷
-- `--token-generation-buckets 2048 4096 8192 12800`: 토큰 생성용 버킷
+- `--context-encoding-buckets ...`: 컨텍스트 인코딩용 버킷
+- `--token-generation-buckets ...`: 토큰 생성용 버킷
 
 **Neuron 런타임 환경 변수:**
 - `NEURON_RT_VIRTUAL_CORE_SIZE=2`: 논리 코어 크기
@@ -322,7 +352,7 @@ echo "=========================================="
 echo "Model path: $MODEL_PATH"
 echo "Compiled artifacts: $NEURON_COMPILED_ARTIFACTS"
 echo "Port: 8000"
-echo "Max model length: 12800 tokens"
+echo "Max model length: 16384 tokens"
 echo "Max concurrent requests: 1"
 echo "=========================================="
 echo ""
@@ -331,7 +361,7 @@ echo ""
 VLLM_RPC_TIMEOUT=100000 python -m vllm.entrypoints.openai.api_server \
     --model $MODEL_PATH \
     --max-num-seqs 1 \
-    --max-model-len 12800 \
+    --max-model-len 16384 \
     --tensor-parallel-size 64 \
     --block-size 16 \
     --port 8000 2>&1 | tee vllm_server.log &
@@ -362,13 +392,13 @@ chmod +x start_vllm.sh
 
 - `--model`: 원본 모델 경로 (컴파일 시 사용한 경로)
 - `--max-num-seqs 1`: 동시 처리 가능한 요청 수 (컴파일 시 batch-size와 동일)
-- `--max-model-len 12800`: 최대 시퀀스 길이 (컴파일 시 seq-len과 동일)
+- `--max-model-len 16384`: 최대 시퀀스 길이 (컴파일 시 seq-len과 동일)
 - `--tensor-parallel-size 64`: TP degree (컴파일 시 tp-degree와 동일)
 - `--block-size 16`: KV 캐시 블록 크기
 - `--port 8000`: API 서버 포트
 
 **⚠️ 중요: 파라미터 일치**
-- `--max-model-len` = 컴파일 시 `--seq-len`
+- `--max-model-len`은 컴파일 시 `--seq-len`과 일치해야 합니다.
 - `--max-num-seqs` = 컴파일 시 `--batch-size`
 - `--tensor-parallel-size` = 컴파일 시 `--tp-degree`
 
@@ -421,7 +451,7 @@ tail -f vllm_server.log
 curl http://localhost:8000/v1/completions \
     -H "Content-Type: application/json" \
     -d '{
-        "model": "/home/ubuntu/models/Llama-3.1-70B-Instruct/",
+        "model": "/home/ubuntu/models/Llama-3.1-70B-Instruct",
         "prompt": "Explain quantum computing in simple terms:",
         "max_tokens": 256,
         "temperature": 0.7
@@ -482,7 +512,7 @@ client = OpenAI(
 
 # 스트리밍 Chat API
 stream = client.chat.completions.create(
-    model="/home/ubuntu/models/Llama-3.1-70B-Instruct/",
+    model="/home/ubuntu/models/Llama-3.1-70B-Instruct",
     messages=[
         {"role": "user", "content": "Write a short story about AI."}
     ],
@@ -570,8 +600,8 @@ export NEURON_RT_INSPECT_ENABLE=1
 서버를 백그라운드에서 실행:
 
 ```bash
-# nohup으로 백그라운드 실행
-nohup ./start_vllm.sh > vllm_server.log 2>&1 &
+# nohup으로 백그라운드 실행 (스크립트 이름 확인)
+nohup ./start_vllm_plugin.sh > vllm_server.log 2>&1 &
 
 # 프로세스 확인
 ps aux | grep vllm
@@ -588,29 +618,15 @@ pkill -f "vllm.entrypoints.openai.api_server"
 ## 요약
 
 이 가이드를 통해 Llama 3.1 70B Instruct 모델을 AWS Trainium2에서 성공적으로 실행할 수 있습니다:
-
 1. ✅ **환경 설정**: vLLM 0.13 Neuron 가상환경 활성화
 2. ✅ **모델 다운로드**: Hugging Face에서 140GB 모델 다운로드
-3. ✅ **모델 컴파일**: inference_demo로 30-60분 컴파일
-4. ✅ **서버 실행**: 컴파일된 모델로 vLLM API 서버 시작
-5. ✅ **API 테스트**: OpenAI 호환 API로 추론 테스트
-6. ✅ **벤치마크**: 성능 측정 및 최적화
+3. ✅ **서버 실행**: 통합된 명령어로 컴파일 및 서버 시작
+4. ✅ **API 테스트**: OpenAI 호환 API로 추론 테스트
 
 **핵심 포인트:**
-- 2단계 프로세스: 컴파일 → 서버 실행
-- 컴파일 파라미터와 서버 파라미터 일치 필수
-- 컴파일된 모델은 재사용 가능
-- 모델 이름 끝에 슬래시(`/`) 주의
+- v1 플러그인 방식은 컴파일과 실행을 하나의 명령어로 통합
+- `--override-neuron-config`를 통해 모든 최적화 옵션 전달
 
 **성공적인 배포를 위한 체크리스트:**
-- [ ] trn2.48xlarge 인스턴스 사용
-- [ ] 모델 다운로드 완료
-- [ ] 컴파일 성공 확인
-- [ ] 서버 health check 통과
-- [ ] API 테스트 성공
-- [ ] 벤치마크 결과 확인
 
 **문제 발생 시:**
-- 문제 해결 섹션 참조
-- 서버 로그 확인 (`tail -f vllm_server.log`)
-- NeuronCore 모니터링 (`neuron-top`)
