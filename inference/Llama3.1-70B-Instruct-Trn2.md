@@ -222,8 +222,12 @@ echo "⏱️  This will take approximately 20-50 minutes on first run."
 echo "=========================================="
 echo ""
 
+ 
+# 파이프라인의 첫 번째 명령어 실패 시 전체를 실패로 처리
+set -o pipefail
+ 
 # inference_demo를 사용한 모델 컴파일
-inference_demo \
+if inference_demo \
     --model-type llama \
     --task-type causal-lm \
         run \
@@ -249,15 +253,21 @@ inference_demo \
         --enable-bucketing \
         --context-encoding-buckets 256 512 1024 2048 4096 8192 10240 12288 16384 \
         --token-generation-buckets 256 512 1024 2048 4096 8192 10240 12288 16384 \
-        --prompt "What is AWS Trainium?" 2>&1 | tee compile.log
+        --prompt "What is AWS Trainium?" 2>&1 | tee compile.log; then
 
-echo ""
-echo "=========================================="
-echo "✅ Compilation complete!"
-echo "=========================================="
-echo "Compiled model saved to: $COMPILED_MODEL_PATH"
-echo "Compilation log saved to: compile.log"
-echo ""
+    echo ""
+    echo "=========================================="
+    echo "✅ Compilation successful!"
+    echo "=========================================="
+    echo "Compiled model saved to: $COMPILED_MODEL_PATH"
+    echo "Compilation log saved to: compile.log"
+    echo ""
+else
+    echo "" >&2
+    echo "==========================================" >&2
+    echo "❌ Compilation failed! Check log for details: compile.log" >&2
+    echo "==========================================" >&2
+fi
 ```
 
 ### Step 2-2: 컴파일 실행
