@@ -27,7 +27,7 @@
    * 👉 **[가이드: EC2 인스턴스 실행](https://github.com/leesjpe/compute-foundation-on-aws/blob/main/ec2/ec2-dlami-neuron.md)**
 
 2. **DLAMI 사용:** Hugging Face Neuron Deep Learning AMI 또는 AWS Deep Learning AMI (Neuron) 권장
-   * Neuron SDK 2.27.1 이상 필요
+   * Neuron SDK 2.27.1 에서 테스트하고 작성 됨
    * vLLM 0.13 Neuron 가상환경 포함
 
 3. **Hugging Face 인증:**
@@ -35,7 +35,7 @@
    * 하지만 다운로드 속도 향상을 위해 로그인 권장
 
 4. **(선택 사항) 고속 스토리지 설정:**
-   * 모델 다운로드 및 캐시 속도를 높이려면 로컬 NVMe SSD (RAID 0) 사용을 고려할 수 있습니다.
+   * 모델 다운로드 및 모델 컴파일, 캐시 속도를 높이려면 로컬 NVMe SSD (RAID 0) 사용을 고려할 수 있습니다.
    * 👉 **[가이드: 고속 스토리지 설정 (NVMe RAID 0)](https://github.com/leesjpe/compute-foundation-on-aws/blob/main/storage/local-nvme-setup.md)**
 
 
@@ -96,17 +96,7 @@ neuron-ls
 +--------+--------+----------+--------+
 ```
 
-### Step 1-3: Hugging Face 인증 (선택사항)
-
-```bash
-# Hugging Face CLI 로그인 (다운로드 속도 향상)
-huggingface-cli login
-
-# 토큰 입력 후 확인
-huggingface-cli whoami
-```
-
-### Step 1-4: 모델 다운로드
+### Step 1-3: 모델 다운로드
 
 모델을 원하는 위치에 미리 다운로드합니다.
 
@@ -124,8 +114,6 @@ ls -lh Qwen3-8B/
 ```
 
 **예상 다운로드 크기:** ~16GB
-
-**다운로드 시간:** 네트워크 속도에 따라 5-15분
 
 **다운로드된 파일 구조:**
 ```
@@ -228,21 +216,19 @@ if inference_demo \
         --local_ranks_size $TP_DEGREE \
         --tp-degree $TP_DEGREE \
         --batch-size 2 \
-        --max-context-length 16384 \
-        --seq-len 16896 \
+        --max-context-length 4096 \
+        --seq-len 8192 \
         --on-device-sampling \
-        --top-k 20 \
+        --top-k 1 \
         --do-sample \
-        --fused-qkv \
         --sequence-parallel-enabled \
-        --qkv-kernel-enabled \
         --attn-kernel-enabled \
         --mlp-kernel-enabled \
         --cc-pipeline-tiling-factor 1 \
         --pad-token-id 151643 \
         --enable-bucketing \
-        --context-encoding-buckets 2048 4096 8192 16384 \
-        --token-generation-buckets 2048 4096 8192 16384 16896 \
+        --context-encoding-buckets 128 256 512 1024 2048 4096 \
+        --token-generation-buckets 128 256 512 1024 2048 4096 8192 \
         --prompt "What is AWS Trainium?" 2>&1 | tee compile.log; then
     
     echo ""
@@ -261,13 +247,6 @@ fi
 ```
 
 
-커널 플래그 하나씩 끄면서 진행 - 모두 끄니 진행 가능
-#         --fused-qkv \
-# --qkv-kernel-enabled \
-# --attn-kernel-enabled \
-# --mlp-kernel-enabled \
-
-
 ### Step 2-2: 컴파일 실행
 
 ```bash
@@ -282,43 +261,7 @@ chmod +x compile_model.sh
 - 첫 실행: 10-30분 
 - 컴파일 완료 후 모델은 `~/compiled_models/Qwen3-8B/`에 저장됩니다
 
-### Step 2-3: 컴파일 파라미터 설명
-
-**기본 설정:**
-- `--model-type qwen2`: Qwen2 모델 타입 (Qwen3는 Qwen2 아키텍처 사용)
-- `--task-type causal-lm`: Causal Language Modeling 작업
-- `--torch-dtype bfloat16`: BFloat16 정밀도 사용
-- `--tp-degree 32`: Tensor Parallelism 32 (8B 모델은 32로 충분)
-
-**컨텍스트 및 시퀀스 설정:**
-- `--max-context-length 16384`: 최대 컨텍스트 길이 (16K 토큰)
-- `--seq-len 16896`: 최대 시퀀스 길이 (컨텍스트 + 생성)
-- `--batch-size 2`: 배치 크기 (동시 처리 요청 수, 8B는 2 가능)
-
-**성능 최적화 옵션:**
-- `--fused-qkv`: QKV projection fusion 활성화
-- `--sequence-parallel-enabled`: Sequence parallelism 활성화
-- `--qkv-kernel-enabled`: 최적화된 QKV 커널 사용
-- `--attn-kernel-enabled`: 최적화된 Attention 커널 사용
-- `--mlp-kernel-enabled`: 최적화된 MLP 커널 사용
-- `--on-device-sampling`: 디바이스에서 직접 샘플링 (지연 시간 감소)
-
-**버킷팅 (동적 배치 최적화):**
-- `--enable-bucketing`: 버킷팅 활성화
-- `--context-encoding-buckets 2048 4096 8192 16384`: 컨텍스트 인코딩용 버킷
-- `--token-generation-buckets 2048 4096 8192 16384 16896`: 토큰 생성용 버킷
-
-**Qwen 특화 설정:**
-- `--pad-token-id 151643`: Qwen 모델의 패딩 토큰 ID
-
-**Neuron 런타임 환경 변수:**
-- `NEURON_RT_VIRTUAL_CORE_SIZE=2`: 논리 코어 크기
-- `NEURON_RT_NUM_CORES=64`: 사용할 물리 코어 수
-- `NEURON_RT_EXEC_TIMEOUT=600`: 실행 타임아웃 (초)
-- `XLA_DENSE_GATHER_FACTOR=0`: XLA 최적화 설정
-- `NEURON_RT_INSPECT_ENABLE=0`: 디버그 모드 비활성화
-
-### Step 2-4: 컴파일 성공 확인
+### Step 2-3: 컴파일 성공 확인
 
 ```bash
 # 컴파일된 모델 확인
@@ -373,7 +316,7 @@ echo ""
 VLLM_RPC_TIMEOUT=100000 python -m vllm.entrypoints.openai.api_server \
     --model $MODEL_PATH \
     --max-num-seqs 2 \
-    --max-model-len 16896 \
+    --max-model-len 8192 \
     --tensor-parallel-size 32 \
     --block-size 16 \
     --port 8000 2>&1 | tee vllm_server.log &
@@ -397,27 +340,13 @@ chmod +x start_vllm.sh
 ```
 
 **⏱️ 서버 시작 시간:**
-- 컴파일된 모델 로딩: 1-3분 (70B보다 빠름)
+- 컴파일된 모델 로딩: 1-3분
 - 첫 요청 처리 시 워밍업: 5-15초
 
-### Step 3-3: 서버 파라미터 설명
-
-- `--model`: 원본 모델 경로 (컴파일 시 사용한 경로)
-- `--max-num-seqs 2`: 동시 처리 가능한 요청 수 (컴파일 시 batch-size와 동일)
-- `--max-model-len 16896`: 최대 시퀀스 길이 (컴파일 시 seq-len과 동일)
-- `--tensor-parallel-size 32`: TP degree (컴파일 시 tp-degree와 동일)
-- `--block-size 16`: KV 캐시 블록 크기
-- `--port 8000`: API 서버 포트
-
-**⚠️ 중요: 파라미터 일치**
+### Step 3-3: **⚠️ 중요: 파라미터 설명**
 - `--max-model-len` = 컴파일 시 `--seq-len`
 - `--max-num-seqs` = 컴파일 시 `--batch-size`
 - `--tensor-parallel-size` = 컴파일 시 `--tp-degree`
-
-**환경 변수:**
-- `VLLM_NEURON_FRAMEWORK="neuronx-distributed-inference"`: NxDI 백엔드 사용
-- `NEURON_COMPILED_ARTIFACTS`: 컴파일된 모델 경로 (캐시 재사용)
-- `VLLM_RPC_TIMEOUT=100000`: RPC 타임아웃 증가
 
 ### Step 3-4: 서버 상태 확인
 
@@ -464,7 +393,7 @@ tail -f vllm_server.log
 curl http://localhost:8000/v1/completions \
     -H "Content-Type: application/json" \
     -d '{
-        "model": "/home/ubuntu/models/Qwen3-8B/",
+        "model": "/home/ubuntu/models/Qwen3-8B",
         "prompt": "Explain quantum computing in simple terms:",
         "max_tokens": 256,
         "temperature": 0.7
@@ -640,35 +569,11 @@ pkill -f "vllm.entrypoints.openai.api_server"
 4. ✅ **서버 실행**: 컴파일된 모델로 vLLM API 서버 시작
 5. ✅ **API 테스트**: OpenAI 호환 API로 추론 테스트
 
-**핵심 포인트:**
-- 2단계 프로세스: 컴파일 → 서버 실행
-- 컴파일 파라미터와 서버 파라미터 일치 필수
-- 컴파일된 모델은 재사용 가능
-- 모델 이름 끝에 슬래시(`/`) 주의
-- Qwen 모델은 `--model-type qwen2` 사용
-- Qwen 패딩 토큰 ID: 151643
-
-**Llama 3.1 70B와의 차이점:**
-- 모델 크기: 8B vs 70B (더 작고 빠름)
-- TP Degree: 32 vs 64 (더 적은 코어 사용)
-- Batch Size: 2 vs 1 (더 많은 동시 요청 처리)
-- 컨텍스트: 16K vs 12K (더 긴 컨텍스트)
-- 컴파일 시간: 10-30분 vs 20-50분 (더 빠름)
-- 로딩 시간: 1-3분 vs 2-5분 (더 빠름)
-
-**성공적인 배포를 위한 체크리스트:**
-- [ ] trn2.48xlarge 또는 더 작은 인스턴스 사용
-- [ ] 모델 다운로드 완료
-- [ ] 컴파일 성공 확인
-- [ ] 서버 health check 통과
-- [ ] API 테스트 성공
-
 **문제 발생 시:**
 - 서버 로그 확인 (`tail -f vllm_server.log`)
 - NeuronCore 모니터링 (`neuron-top`)
 - 컴파일 로그 확인 (`tail -f compile.log`)
 
 **다음 단계:**
-- 벤치마크 실행: `benchmark/` 디렉토리의 스크립트 사용
 - 성능 최적화: TP degree, batch size, context length 조정
 - 프로덕션 배포: 로드 밸런서, 오토스케일링 설정
