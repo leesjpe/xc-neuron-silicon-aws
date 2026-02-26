@@ -24,9 +24,8 @@ echo "✅ Loaded configuration from $CONFIG_FILE"
 echo
 
 # 2. --- Setup Result Directory ---
-TIMESTAMP=$(date +%Y%m%d_%H%M)
 RESULTS_BASE_DIR="/home/ubuntu/benchmark_result"
-TEST_RUN_DIR="${RESULTS_BASE_DIR}/llmperf/${MODEL_NAME}/${TIMESTAMP}"
+TEST_RUN_DIR="${RESULTS_BASE_DIR}/llmperf/${MODEL_NAME}"
 mkdir -p $TEST_RUN_DIR
 echo "📊 Saving all results to: $TEST_RUN_DIR"
 echo
@@ -86,6 +85,34 @@ for compiled_path in $COMPILED_MODEL_PATHS; do
     echo "================================================================="
     echo "🚀 Benchmarking Model: $dir_name (TP=${tp}, BS=${bs}, CTX=${ctx})"
     echo "================================================================="
+
+    # --- Pre-check if all tests for this model are already complete before starting the server ---
+    all_tests_done=true
+    # This loop must exactly mirror the main benchmark loop's structure
+    for conc_check in $LLMPERF_CONCURRENCIES; do
+        # Don't check for concurrencies higher than the batch size
+        if [ "$conc_check" -gt "$bs" ]; then
+            continue
+        fi
+
+        for variation_check in "${LLMPERF_VARIATIONS[@]}"; do
+            IFS=' ' read -r mean_in_check std_in_check mean_out_check std_out_check <<< "$variation_check"
+            
+            test_name_check="conc${conc_check}_in${mean_in_check}_out${mean_out_check}"
+            result_dir_check="${TEST_RUN_DIR}/${dir_name}/llmperf_${test_name_check}"
+
+            if ! ls "${result_dir_check}"/*_summary.json 1> /dev/null 2>&1; then
+                all_tests_done=false
+                break 2 # Break out of both inner and outer loops, a test is missing
+            fi
+        done
+    done
+
+    if [ "$all_tests_done" = true ]; then
+        echo "✅ All tests for model configuration '$dir_name' are already complete. Skipping server startup."
+        echo
+        continue
+    fi
 
     # Create a subdirectory for this specific compiled model's results
     MODEL_RESULTS_DIR="${TEST_RUN_DIR}/${dir_name}"
@@ -155,6 +182,14 @@ for compiled_path in $COMPILED_MODEL_PATHS; do
             result_dir="${MODEL_RESULTS_DIR}/llmperf_${test_name}"
             mkdir -p "$result_dir"
 
+            # --- Check for existing successful benchmark result ---
+            # Check for any file ending with _summary.json to mark completion.
+            result_file=$(ls "${result_dir}"/*_summary.json 2>/dev/null | head -n 1)
+            if [ -n "$result_file" ]; then
+                echo "   ⏭️  SKIPPING test ${test_name} (result found: $(basename "$result_file")). Job ${CURRENT_JOB}/${TOTAL_JOBS}."
+                continue
+            fi
+
             export OPENAI_API_BASE=${LLMPERF_API_BASE}
             export OPENAI_API_KEY="dummy"
 
@@ -173,7 +208,9 @@ for compiled_path in $COMPILED_MODEL_PATHS; do
                     --llm-api "${LLMPERF_API_TYPE}" \
                     --additional-sampling-params "${LLMPERF_SAMPLING_PARAMS}" 2>&1 | tee "$bench_log_file"
             ); then
-                echo "   ✅ SUCCESS: Concurrency=${conc}"
+                # No need to rename, the visualization script can handle the default name.
+                # The existence of the *_summary.json file is the success marker.
+                echo "   ✅ SUCCESS: Concurrency=${conc}. Result saved in $result_dir"
             else
                 echo "   ❌ FAILED: Concurrency=${conc}. See log." >&2
             fi
