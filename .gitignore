@@ -1,3 +1,4 @@
 .vscode/*
 benchmark/scripts/global_metric_store.json
 benchmark/scripts/llmperf/
+*.log
