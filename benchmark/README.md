@@ -35,9 +35,9 @@ cd benchmark/scripts
 
 ```bash
 # nohup으로 백그라운드 실행
-nohup ./compile_model.sh ../configs/llama31-70b.conf > /dev/null 2>&1 &
-nohup ./run_llmperf.sh ../configs/llama31-70b.conf > /dev/null 2>&1 &
-nohup ./run_accuracy.sh ../configs/llama31-70b.conf > /dev/null 2>&1 &
+nohup ./compile_model.sh ../configs/qwen3-8b.conf > compile_run.log 2>&1 &
+nohup ./run_llmperf.sh ../configs/qwen3-8b.conf > llmperf_run.log 2>&1 &
+nohup ./run_accuracy.sh ../configs/qwen3-8b.conf > accuracy_run.log 2>&1 &
 
 # 프로세스 확인
 ps aux | grep -E "compile_model|run_llmperf|run_accuracy"

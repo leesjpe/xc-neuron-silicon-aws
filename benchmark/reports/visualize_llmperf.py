@@ -312,6 +312,7 @@ if __name__ == "__main__":
     # This can be expanded with more instance types.
     INSTANCE_PRICES = {
         "trn2.48xlarge": 35.7608,
+        "inf2.48xlarge": 12.98,
         # Add other instances here, e.g., "inf2.48xlarge": 12.048
     }
 
