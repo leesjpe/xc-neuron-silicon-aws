@@ -1,4 +1,4 @@
-# Serving Qwen3 30B BF16 on Trainium2 with vLLM (NxD)
+# Serving Qwen2.5 72B instruct on Trainium2 with vLLM (NxD)
 
 이 가이드는 **AWS Trainium2 (`trn2.48xlarge`)** 인스턴스에서 **vLLM**과 **Neuronx Distributed (NxD)** 아키텍처를 사용하여 [**Qwen 2.5 (72B) Instruct**](https://huggingface.co/Qwen/Qwen2.5-72B-Instruct) 모델을 서빙하는 방법을 설명합니다.
 aws neuron 공식문서의 [Tutorial](https://awsdocs-neuron.readthedocs-hosted.com/en/latest/libraries/nxd-inference/tutorials/sd-inference-tutorial.html) 을 기반으로 구성 되었습니다. 
