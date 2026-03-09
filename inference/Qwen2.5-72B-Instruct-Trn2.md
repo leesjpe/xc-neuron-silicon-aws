@@ -67,6 +67,9 @@ hf download Qwen/Qwen2.5-72B-Instruct --local-dir /data/models/qwen2.5-72b-instr
 
 1-3 과정은  10~15 소요되며 아래와 같이 로그가 보이면 컴파일 및 서버 시작 완료 ☕️
 
+<img width="819" height="616" alt="Screenshot 2026-03-09 at 6 23 27 PM" src="https://github.com/user-attachments/assets/537c13e0-9641-4630-946a-6032911a8335" />
+
+
 기존 vLLM V0 방식에서는 VLLM_USE_V1=0 를 사용했지만 V1 에서는 제외 합니다.
 
 ```bash
@@ -105,5 +108,6 @@ curl http://localhost:8000/v1/completions \
 }'
 ```
 
+<img width="833" height="317" alt="Screenshot 2026-03-09 at 6 23 37 PM" src="https://github.com/user-attachments/assets/f9691245-0239-4071-a44f-5324062b9a53" />
 
 
