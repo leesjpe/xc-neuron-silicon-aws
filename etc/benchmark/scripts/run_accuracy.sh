@@ -40,14 +40,13 @@ if [ -z "$COMPILED_MODEL_PATHS" ]; then
     exit 1
 fi
 
-# 4. --- Check for accuracy.py script ---
-ACCURACY_SCRIPT_PATH="accuracy.py"
-if [ ! -f "$ACCURACY_SCRIPT_PATH" ]; then
-    echo "❌ Error: accuracy.py not found at '$ACCURACY_SCRIPT_PATH'"
-    echo "   Please run 'setup.sh' or clone 'aws-neuron-samples' repository manually."
+# 4. --- Check for lm-eval command ---
+if ! command -v lm_eval &> /dev/null
+then
+    echo "❌ Error: 'lm_eval' command not found. Please make sure 'lm-eval-harness' is installed in your environment."
     exit 1
 fi
-echo "✅ Found accuracy script: $ACCURACY_SCRIPT_PATH"
+echo "✅ Found lm-eval command"
 
 # 5. --- Set Neuron Runtime Environment ---
 export NEURON_RT_VIRTUAL_CORE_SIZE=${NEURON_RT_VIRTUAL_CORE_SIZE:-2}
@@ -88,89 +87,129 @@ for compiled_path in $COMPILED_MODEL_PATHS; do
     MODEL_RESULTS_DIR="${TEST_RUN_DIR}/${dir_name}"
     mkdir -p "$MODEL_RESULTS_DIR"
 
+    # --- Start Server ---
+    echo "1. Stopping any existing server..."
+    pkill -f "vllm.entrypoints.openai.api_server" 2>/dev/null || true
+    sleep 3
+
+    SERVER_PORT=${ACCURACY_SERVER_PORT:-8000}
+    echo "2. Starting vLLM server for $dir_name on port $SERVER_PORT..."
+    export NEURON_COMPILED_ARTIFACTS=$compiled_path
+    export VLLM_NEURON_FRAMEWORK="neuronx-distributed-inference"
+    
+    SERVER_LOG_FILE="${MODEL_RESULTS_DIR}/server.log"
+
+    VLLM_RPC_TIMEOUT=${VLLM_RPC_TIMEOUT:-100000} python -m vllm.entrypoints.openai.api_server \
+        --model "$MODEL_PATH" \
+        --served-model-name "$MODEL_NAME" \
+        --trust-remote-code \
+        --max-num-seqs "$bs" \
+        --max-model-len "$SEQ_LEN" \
+        --tensor-parallel-size "$tp" \
+        --block-size 16 \
+        --port "$SERVER_PORT" \
+        > "$SERVER_LOG_FILE" 2>&1 &
+    
+    server_pid=$!
+
+    # --- Wait for Server ---
+    echo "3. Waiting for server to be ready..."
+    server_ready=false
+    for i in {1..60}; do
+        if curl -s http://localhost:${SERVER_PORT}/health > /dev/null 2>&1; then
+            echo "   ✅ Server ready!"
+            server_ready=true
+            break
+        fi
+        sleep 5
+    done
+
+    if [ "$server_ready" = false ]; then
+        echo "   ❌ Server failed to start for $dir_name. Check log: $SERVER_LOG_FILE"
+        kill $server_pid 2>/dev/null || true
+        pkill -f "vllm.entrypoints.openai.api_server" 2>/dev/null || true
+        continue # Skip to the next compiled model
+    fi
+
     for dataset_spec in $ACCURACY_DATASETS; do
         CURRENT_JOB=$((CURRENT_JOB + 1))
         
         # Parse "dataset:limit" format
         IFS=':' read -r dataset limit <<< "$dataset_spec"
+        limit=${limit:-0} # Default limit to 0 if not specified
 
         echo "-----------------------------------------------------------------"
-        echo "   ▶️  Running test ${CURRENT_JOB}/${TOTAL_JOBS}: Dataset=${dataset}, Limit=${limit}"
+        echo "   ▶️  Running test ${CURRENT_JOB}/${TOTAL_JOBS}: Dataset=${dataset}, Limit=${limit:-no limit}"
         echo "-----------------------------------------------------------------"
 
-        # --- Generate YAML config dynamically ---
         test_name="acc_${dataset}"
-        yaml_config_file="${MODEL_RESULTS_DIR}/${test_name}.yaml"
         test_log_file="${MODEL_RESULTS_DIR}/${test_name}.log"
         result_json_file="${MODEL_RESULTS_DIR}/result_${test_name}.json"
+        detailed_result_json_file="${MODEL_RESULTS_DIR}/detailed_result_${test_name}.json"
 
         # --- Check for existing successful benchmark result ---
         if [ -f "$result_json_file" ]; then
             echo "   ⏭️  SKIPPING dataset $dataset (result file already exists). Job ${CURRENT_JOB}/${TOTAL_JOBS}."
             continue
         fi
-
-        cat > "$yaml_config_file" << EOF
-server:
-  name: "${dir_name}-accuracy-test"
-  model_path: "$MODEL_PATH"
-  model_s3_path: "not_used"
-  max_seq_len: $SEQ_LEN
-  context_encoding_len: $ctx
-  tp_degree: $tp
-  n_vllm_threads: ${ACCURACY_N_VLLM_THREADS:-16}
-  server_port: ${ACCURACY_SERVER_PORT:-8000}
-  continuous_batch_size: $bs
-  compiled_model_path: "$compiled_path"
-
-test:
-  accuracy:
-    ${dataset}_test:
-      client: "lm_eval"
-      datasets: ["$dataset"]
-      max_concurrent_requests: ${ACCURACY_MAX_CONCURRENT_REQUESTS:-1}
-      timeout: ${ACCURACY_TIMEOUT:-3600}
-      client_params:
-        batch_size: ${ACCURACY_CLIENT_PARAMS_BATCH_SIZE:-1}
-        num_fewshot: ${ACCURACY_CLIENT_PARAMS_NUM_FEW_SHOT:-0}
-EOF
-
-        # Add limit to YAML only if it's greater than 0
+        
+        API_BASE="http://localhost:${SERVER_PORT}/v1"
+        MODEL_ARGS="model=${MODEL_NAME},base_url=${API_BASE},api_key=dummy"
+        
+        limit_arg=""
         if [ "$limit" -gt 0 ]; then
-            echo "        limit: $limit" >> "$yaml_config_file"
+            limit_arg="--limit $limit"
         fi
 
-        echo "   1. Generated YAML config: $yaml_config_file"
-        echo "   2. Running accuracy test (log: ${test_log_file})..."
-
         # --- Run Accuracy Test ---
+        echo "   1. Running lm-eval (log: ${test_log_file})..."
         if (
             set -o pipefail
-            # Change to the script's directory to ensure it finds its modules
-            cd "$(dirname "$ACCURACY_SCRIPT_PATH")"
-            python3 "$(basename "$ACCURACY_SCRIPT_PATH")" --config "$yaml_config_file" 2>&1 | tee "$test_log_file"
+            lm_eval --model openai-completions \
+                --model_args "$MODEL_ARGS" \
+                --tasks "$dataset" \
+                --batch_size "${ACCURACY_CLIENT_PARAMS_BATCH_SIZE:-1}" \
+                --num_fewshot "${ACCURACY_CLIENT_PARAMS_NUM_FEW_SHOT:-0}" \
+                $limit_arg \
+                --output_path "$detailed_result_json_file" 2>&1 | tee "$test_log_file"
         ); then
-            # Parse result from log
-            accuracy_line=$(grep -A 5 "\"task\": \"$dataset\"" "$test_log_file" | grep -E '"acc"|"acc_norm"' | head -1)
-            accuracy_val=$(echo "$accuracy_line" | awk -F': ' '{print $2}' | sed 's/,//')
-
+            # Parse result from detailed JSON output
+            accuracy_val=$(jq -r ".results[\"$dataset\"].acc // .results[\"$dataset\"].acc_norm // null" "$detailed_result_json_file")
+            
             echo "   ✅ SUCCESS: Dataset=${dataset}. Accuracy = ${accuracy_val:-N/A}"
             
-            # Write individual result file
+            # Write simplified summary result file
             cat > "$result_json_file" << EOF
 {
   "model_config": "$dir_name",
   "dataset": "$dataset",
-  "limit": $limit,
+  "limit": ${limit:-null},
   "status": "SUCCESS",
   "accuracy": ${accuracy_val:-null}
 }
 EOF
         else
-            echo "   ❌ FAILED: Dataset=${dataset}. See log." >&2
+            echo "   ❌ FAILED: Dataset=${dataset}. See log: $test_log_file" >&2
+            # Create a failure record
+            cat > "$result_json_file" << EOF
+{
+  "model_config": "$dir_name",
+  "dataset": "$dataset",
+  "limit": ${limit:-null},
+  "status": "FAILED",
+  "accuracy": null
+}
+EOF
         fi
         echo
     done
+
+    # --- Stop Server ---
+    echo "4. Stopping server..."
+    kill $server_pid 2>/dev/null || true
+    pkill -f "vllm.entrypoints.openai.api_server" 2>/dev/null || true
+    sleep 3
+    echo
 done
 
 echo "================================================================="
