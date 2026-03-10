@@ -76,3 +76,10 @@ lsof -i :8000
 # 서버 로그 확인
 cat benchmark_results/[최신_디렉토리]/server_*.log
 ```
+
+# Accuracy
+```bash
+git clone https://github.com/EleutherAI/lm-evaluation-harness
+cd lm-evaluation-harness
+pip install -e .
+```
