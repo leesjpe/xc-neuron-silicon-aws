@@ -40,6 +40,11 @@ if [ -z "$COMPILED_MODEL_PATHS" ]; then
     exit 1
 fi
 
+# --- DEBUG: Print the discovered model paths ---
+echo "--- DEBUG: Found compiled model paths ---"
+echo "$COMPILED_MODEL_PATHS"
+echo "-----------------------------------------"
+
 # 4. --- Check for LLMPerf script ---
 LLMPERF_DIR="llmperf"
 LLMPERF_SCRIPT="${LLMPERF_DIR}/token_benchmark_ray.py"

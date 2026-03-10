@@ -22,10 +22,13 @@ HTML_TEMPLATE = """
         .container { max-width: 1600px; }
         .plot { margin-bottom: 3rem; background-color: #fff; padding: 1rem; border-radius: 0.5rem; box-shadow: 0 0 10px rgba(0,0,0,0.05); }
         h1, h2 { border-bottom: 1px solid #dee2e6; padding-bottom: 0.5rem; margin-bottom: 1.5rem; }
+        .table-header { display: flex; justify-content: space-between; align-items: center; }
         .table-responsive { max-height: 600px; }
         th { text-align: center; cursor: pointer; user-select: none; }
         th:hover { background-color: #f2f2f2; }
         td { text-align: center; vertical-align: middle; }
+        .table-highlightable tbody tr:hover { background-color: #e9ecef; cursor: pointer; }
+        .table-highlightable tbody tr.highlighted { background-color: #cfe2ff; }
         .status-SUCCESS { color: green; font-weight: bold; }
         .status-FAILED { color: red; font-weight: bold; }
         .status-SKIPPED { color: orange; font-weight: bold; }
@@ -41,66 +44,166 @@ HTML_TEMPLATE = """
 <body>
     <div class="container">
         <h1 class="mb-4">{{ report_title }}</h1>
-        
-        <h2 id="summary">Summary Table</h2>
+
+        <div class="table-header">
+            <h2 id="summary">Summary Table</h2>
+            <button id="resetSortBtn" class="btn btn-secondary btn-sm">Reset Sort</button>
+        </div>
         <div class="table-responsive">
             {{ summary_table | safe }}
         </div>
 
         <h2 id="visuals" class="mt-5">Visualizations</h2>
-        <div class="plot">
+        <div id="throughput-plot" class="plot">
             {{ throughput_fig | safe }}
         </div>
-        <div class="plot">
+        <div id="e2e-latency-plot" class="plot">
             {{ e2e_latency_fig | safe }}
         </div>
-        <div class="plot">
+        <div id="ttft-plot" class="plot">
             {{ ttft_fig | safe }}
         </div>
-        <div class="plot">
+        <div id="tpot-plot" class="plot">
             {{ tpot_fig | safe }}
         </div>
-        <div class="plot">
+        <div id="cost-plot" class="plot">
             {{ cost_fig | safe }}
         </div>
     </div>
     <script>
-    function sortTableByColumn(table, column, asc = true) {
-        const dirModifier = asc ? 1 : -1;
+    document.addEventListener('DOMContentLoaded', function () {
+        const table = document.querySelector(".table-sortable");
+        if (!table) return;
+
         const tBody = table.tBodies[0];
-        const rows = Array.from(tBody.querySelectorAll("tr"));
+        const originalRows = Array.from(tBody.rows);
+        let sortCriteria = [];
 
-        const sortedRows = rows.sort((a, b) => {
-            const aColText = a.querySelector(`td:nth-child(${ column + 1 })`).textContent.trim();
-            const bColText = b.querySelector(`td:nth-child(${ column + 1 })`).textContent.trim();
-            
-            if (aColText === 'N/A') return 1 * dirModifier;
-            if (bColText === 'N/A') return -1 * dirModifier;
+        function getCellValue(row, colIndex) {
+            const cell = row.cells[colIndex];
+            if (!cell) return null;
+            const text = cell.textContent.trim();
+            if (text === 'N/A') return null;
+            const num = parseFloat(text.replace(/,/g, ''));
+            return isNaN(num) ? text.toLowerCase() : num;
+        }
 
-            const aVal = parseFloat(aColText.replace(/,/g, ''));
-            const bVal = parseFloat(bColText.replace(/,/g, ''));
+        function sortTable() {
+            if (sortCriteria.length === 0) return;
 
-            if (!isNaN(aVal) && !isNaN(bVal)) {
-                return (aVal - bVal) * dirModifier;
-            } else {
-                return aColText.localeCompare(bColText, undefined, { numeric: true }) * dirModifier;
-            }
+            const sortedRows = Array.from(originalRows).sort((a, b) => {
+                for (const criterion of sortCriteria) {
+                    const { column, asc } = criterion;
+                    const dirModifier = asc ? 1 : -1;
+                    const aVal = getCellValue(a, column);
+                    const bVal = getCellValue(b, column);
+
+                    if (aVal === null) return 1 * dirModifier;
+                    if (bVal === null) return -1 * dirModifier;
+
+                    if (typeof aVal === 'number' && typeof bVal === 'number') {
+                        if (aVal < bVal) return -1 * dirModifier;
+                        if (aVal > bVal) return 1 * dirModifier;
+                    } else {
+                        const comparison = String(aVal).localeCompare(String(bVal), undefined, { numeric: true });
+                        if (comparison !== 0) return comparison * dirModifier;
+                    }
+                }
+                return 0;
+            });
+
+            tBody.append(...sortedRows);
+        }
+
+        function updateSortHeaders() {
+            table.querySelectorAll("th").forEach(th => th.classList.remove("th-sort-asc", "th-sort-desc"));
+            sortCriteria.forEach(criterion => {
+                const th = table.querySelector(`th:nth-child(${criterion.column + 1})`);
+                if (th) {
+                    th.classList.toggle("th-sort-asc", criterion.asc);
+                    th.classList.toggle("th-sort-desc", !criterion.asc);
+                }
+            });
+        }
+
+        table.querySelectorAll("th").forEach((headerCell, headerIndex) => {
+            headerCell.addEventListener("click", (event) => {
+                const existingCriterionIndex = sortCriteria.findIndex(c => c.column === headerIndex);
+
+                if (event.shiftKey) {
+                    if (existingCriterionIndex > -1) {
+                        sortCriteria[existingCriterionIndex].asc = !sortCriteria[existingCriterionIndex].asc;
+                    } else {
+                        sortCriteria.push({ column: headerIndex, asc: true });
+                    }
+                } else {
+                    if (existingCriterionIndex > -1) {
+                        const currentAsc = sortCriteria[existingCriterionIndex].asc;
+                        sortCriteria = [{ column: headerIndex, asc: !currentAsc }];
+                    } else {
+                        sortCriteria = [{ column: headerIndex, asc: true }];
+                    }
+                }
+                sortTable();
+                updateSortHeaders();
+            });
         });
 
-        while (tBody.firstChild) { tBody.removeChild(tBody.firstChild); }
-        tBody.append(...sortedRows);
+        document.getElementById('resetSortBtn').addEventListener('click', () => {
+            sortCriteria = [];
+            tBody.append(...originalRows);
+            table.querySelectorAll("th").forEach(th => th.classList.remove("th-sort-asc", "th-sort-desc"));
+        });
 
-        table.querySelectorAll("th").forEach(th => th.classList.remove("th-sort-asc", "th-sort-desc"));
-        table.querySelector(`th:nth-child(${ column + 1 })`).classList.toggle("th-sort-asc", asc);
-        table.querySelector(`th:nth-child(${ column + 1 })`).classList.toggle("th-sort-desc", !asc);
-    }
+        // Initial sort by cost (ascending)
+        function performInitialSort() {
+            const headers = Array.from(table.querySelectorAll('th'));
+            const costColumnIndex = headers.findIndex(th => th.textContent.trim() === 'cost_per_1m_tokens');
+            if (costColumnIndex > -1) {
+                sortCriteria = [{ column: costColumnIndex, asc: true }];
+                sortTable();
+                updateSortHeaders();
+            }
+        }
+        performInitialSort();
 
-    document.querySelectorAll(".table-sortable th").forEach(headerCell => {
-        headerCell.addEventListener("click", () => {
-            const tableElement = headerCell.closest('table');
-            const headerIndex = Array.from(headerCell.parentElement.children).indexOf(headerCell);
-            const currentIsAscending = headerCell.classList.contains("th-sort-asc");
-            sortTableByColumn(tableElement, headerIndex, !currentIsAscending);
+        // Highlighting functionality
+        const plotDivs = document.querySelectorAll('.plot > div');
+        let highlightedTraceName = null;
+
+        tBody.addEventListener('click', (event) => {
+            const row = event.target.closest('tr');
+            if (!row) return;
+
+            const modelConfig = row.cells[0].textContent.trim();
+            const isCurrentlyHighlighted = row.classList.contains('highlighted');
+
+            // Clear previous highlights
+            tBody.querySelectorAll('tr.highlighted').forEach(r => r.classList.remove('highlighted'));
+
+            if (isCurrentlyHighlighted) {
+                // Un-highlight
+                highlightedTraceName = null;
+                plotDivs.forEach(div => {
+                    Plotly.restyle(div, { 'line.width': 2, opacity: 1.0 });
+                });
+            } else {
+                // Highlight new row
+                highlightedTraceName = modelConfig;
+                row.classList.add('highlighted');
+                plotDivs.forEach(div => {
+                    const update = {
+                        'line.width': Array(div.data.length).fill(0.5),
+                        'opacity': Array(div.data.length).fill(0.3)
+                    };
+                    const traceIndex = div.data.findIndex(trace => trace.name === modelConfig);
+                    if (traceIndex !== -1) {
+                        update['line.width'][traceIndex] = 4;
+                        update['opacity'][traceIndex] = 1.0;
+                    }
+                    Plotly.restyle(div, update);
+                });
+            }
         });
     });
     </script>
@@ -154,7 +257,7 @@ def parse_results(results_dir, expected_concurrencies):
                 "bs": bs,
                 "ctx": ctx,
                 "concurrency": conc,
-                "throughput_per_s": None,
+                "throughput_tokens_per_s": None,
                 "ttft_p50_ms": None,
                 "e2e_latency_p50_ms": None,
                 "tpot_p50_ms": None,
@@ -185,7 +288,7 @@ def parse_results(results_dir, expected_concurrencies):
                         summary_data = json.load(f)
 
                     record.update({
-                        "throughput_per_s": summary_data.get("results_mean_output_throughput_token_per_s"),
+                        "throughput_tokens_per_s": summary_data.get("results_mean_output_throughput_token_per_s"),
                         "ttft_p50_ms": summary_data.get("results_ttft_s_quantiles_p50", 0) * 1000,
                         "e2e_latency_p50_ms": summary_data.get("results_end_to_end_latency_s_quantiles_p50", 0) * 1000,
                         "tpot_p50_ms": summary_data.get("results_inter_token_latency_s_quantiles_p50", 0) * 1000,
@@ -218,11 +321,11 @@ def create_plots(df):
     if not df_success.empty:
         # Plot 1: Throughput vs. Concurrency
         fig_throughput = px.line(
-            df_success, x='concurrency', y='throughput_per_s', color='model_config', markers=True,
+            df_success, x='concurrency', y='throughput_tokens_per_s', color='model_config', markers=True,
             title='LLMPerf: Throughput vs. Concurrency (Higher is Better)',
-            labels={"concurrency": "Concurrency", "throughput_per_s": "Throughput (Output Tokens/sec)", "model_config": "Model Config"}
+            labels={"concurrency": "Concurrency", "throughput_tokens_per_s": "Throughput (Output Tokens/sec)", "model_config": "Model Config"}
         )
-        fig_throughput.update_layout(xaxis_type='log')
+        fig_throughput.update_xaxes(type='linear', tickvals=df_success['concurrency'].unique())
         plots['throughput_fig'] = fig_throughput.to_html(full_html=False, include_plotlyjs='cdn')
 
         # Plot 2: P50 End-to-End Latency vs. Concurrency
@@ -231,7 +334,7 @@ def create_plots(df):
             title='LLMPerf: Median End-to-End Latency vs. Concurrency (Lower is Better)',
             labels={"concurrency": "Concurrency", "e2e_latency_p50_ms": "Median E2E Latency (ms)", "model_config": "Model Config"}
         )
-        fig_e2e.update_layout(xaxis_type='log')
+        fig_e2e.update_xaxes(type='linear', tickvals=df_success['concurrency'].unique())
         plots['e2e_latency_fig'] = fig_e2e.to_html(full_html=False, include_plotlyjs=False)
 
         # Plot 3: P50 TTFT vs. Concurrency
@@ -240,7 +343,7 @@ def create_plots(df):
             title='LLMPerf: Median Time to First Token (TTFT) vs. Concurrency (Lower is Better)',
             labels={"concurrency": "Concurrency", "ttft_p50_ms": "Median TTFT (ms)", "model_config": "Model Config"}
         )
-        fig_ttft.update_layout(xaxis_type='log')
+        fig_ttft.update_xaxes(type='linear', tickvals=df_success['concurrency'].unique())
         plots['ttft_fig'] = fig_ttft.to_html(full_html=False, include_plotlyjs=False)
 
         # Plot 4: P50 TPOT vs. Concurrency
@@ -249,17 +352,17 @@ def create_plots(df):
             title='LLMPerf: Median Inter-Token Latency (TPOT) vs. Concurrency (Lower is Better)',
             labels={"concurrency": "Concurrency", "tpot_p50_ms": "Median TPOT (ms)", "model_config": "Model Config"}
         )
-        fig_tpot.update_layout(xaxis_type='log')
+        fig_tpot.update_xaxes(type='linear', tickvals=df_success['concurrency'].unique())
         plots['tpot_fig'] = fig_tpot.to_html(full_html=False, include_plotlyjs=False)
 
-        # Plot 5: Cost per 1K Tokens vs. Concurrency
-        if 'cost_per_1k_tokens' in df_success.columns:
+        # Plot 5: Cost per 1M Tokens vs. Concurrency
+        if 'cost_per_1m_tokens' in df_success.columns:
             fig_cost = px.line(
-                df_success, x='concurrency', y='cost_per_1k_tokens', color='model_config', markers=True,
-                title='LLMPerf: Cost per 1K Output Tokens vs. Concurrency (Lower is Better)',
-                labels={"concurrency": "Concurrency", "cost_per_1k_tokens": "Cost per 1K Tokens ($)", "model_config": "Model Config"}
+                df_success, x='concurrency', y='cost_per_1m_tokens', color='model_config', markers=True,
+                title='LLMPerf: Cost per 1M Output Tokens vs. Concurrency (Lower is Better)',
+                labels={"concurrency": "Concurrency", "cost_per_1m_tokens": "Cost per 1M Tokens ($)", "model_config": "Model Config"}
             )
-            fig_cost.update_layout(xaxis_type='log')
+            fig_cost.update_xaxes(type='linear', tickvals=df_success['concurrency'].unique())
             plots['cost_fig'] = fig_cost.to_html(full_html=False, include_plotlyjs=False)
 
     return plots
@@ -282,13 +385,13 @@ def generate_html_report(df, plots, output_dir, instance_type):
         df_display['status'] = df_display['status'].apply(format_status)
         
         # Round numeric columns for better readability
-        for col in ['throughput_per_s', 'e2e_latency_p50_ms', 'ttft_p50_ms', 'tpot_p50_ms']:
+        for col in ['throughput_tokens_per_s', 'e2e_latency_p50_ms', 'ttft_p50_ms', 'tpot_p50_ms']:
             if col in df_display.columns:
                 df_display[col] = df_display[col].map('{:.2f}'.format, na_action='ignore')
-        if 'cost_per_1k_tokens' in df_display.columns:
-            df_display['cost_per_1k_tokens'] = df_display['cost_per_1k_tokens'].map('{:.4f}'.format, na_action='ignore')
+        if 'cost_per_1m_tokens' in df_display.columns:
+            df_display['cost_per_1m_tokens'] = df_display['cost_per_1m_tokens'].map('{:.6f}'.format, na_action='ignore')
 
-        summary_table = df_display.to_html(classes='table table-striped table-hover table-sortable', index=False, na_rep='N/A', escape=False)
+        summary_table = df_display.to_html(classes='table table-striped table-hover table-sortable table-highlightable', index=False, na_rep='N/A', escape=False)
     else:
         summary_table = "<p>No valid llmperf results found to display.</p>"
 
@@ -301,7 +404,8 @@ def generate_html_report(df, plots, output_dir, instance_type):
         **plots
     )
 
-    report_path = os.path.join(output_dir, "llmperf_visual_report.html")
+    report_filename = f"llmperf_report_{model_name}_{instance_type}.html"
+    report_path = os.path.join(output_dir, report_filename)
     with open(report_path, 'w') as f:
         f.write(rendered_html)
     
@@ -344,11 +448,11 @@ if __name__ == "__main__":
     if results_df.empty:
         print("⚠️ No results found to visualize.")
     else:
-        # --- Calculate Cost per 1K Tokens ---
-        if 'throughput_per_s' in results_df.columns and results_df['throughput_per_s'].notna().any():
-            # Cost per 1K tokens = (price_per_second / tokens_per_second) * 1,000
-            results_df['cost_per_1k_tokens'] = results_df.apply(
-                lambda row: (hourly_price / 3600) / row['throughput_per_s'] * 1_000 if pd.notna(row['throughput_per_s']) and row['throughput_per_s'] > 0 else None,
+        # --- Calculate Cost per 1M Tokens ---
+        if 'throughput_tokens_per_s' in results_df.columns and results_df['throughput_tokens_per_s'].notna().any():
+            # Cost per 1M tokens = (price_per_second / tokens_per_second) * 1,000,000
+            results_df['cost_per_1m_tokens'] = results_df.apply(
+                lambda row: (hourly_price / 3600) / row['throughput_tokens_per_s'] * 1_000_000 if pd.notna(row['throughput_tokens_per_s']) and row['throughput_tokens_per_s'] > 0 else None,
                 axis=1
             )
 
