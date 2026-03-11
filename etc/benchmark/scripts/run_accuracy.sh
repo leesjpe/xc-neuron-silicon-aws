@@ -154,8 +154,8 @@ for compiled_path in $COMPILED_MODEL_PATHS; do
         fi
         
         API_BASE="http://localhost:${SERVER_PORT}/v1"
-        # MODEL_ARGS="model=${MODEL_NAME},base_url=${API_BASE},tokenizer=${MODEL_PATH},api_key=dummy"
-        MODEL_ARGS="pretrained=${MODEL_PATH},tokenizer=${MODEL_PATH},max_model_len=${MAX_CONTEXT_LENGTH},block_size=16"
+        MODEL_ARGS="model=${MODEL_NAME},base_url=${API_BASE},tokenizer=${MODEL_PATH},api_key=dummy,chat_template_kwargs={\"enable_thinking\":false}"
+        # MODEL_ARGS="pretrained=${MODEL_PATH},tokenizer=${MODEL_PATH},max_model_len=${MAX_CONTEXT_LENGTH},block_size=16"
         
         limit_arg=""
         if [ "$limit" -gt 0 ]; then
@@ -166,7 +166,7 @@ for compiled_path in $COMPILED_MODEL_PATHS; do
         echo "   1. Running lm-eval (log: ${test_log_file})..."
         if (
             set -o pipefail
-            lm_eval --model vllm \
+            lm_eval --model local-chat-completions \
                 --model_args "$MODEL_ARGS" \
                 --tasks "$dataset" \
                 --batch_size "${ACCURACY_CLIENT_PARAMS_BATCH_SIZE:-1}" \
