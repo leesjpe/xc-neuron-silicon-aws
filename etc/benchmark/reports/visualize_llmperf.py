@@ -417,17 +417,20 @@ if __name__ == "__main__":
     INSTANCE_PRICES = {
         "trn2.48xlarge": 35.7608,
         "inf2.48xlarge": 12.98,
-        # Add other instances here, e.g., "inf2.48xlarge": 12.048
+        "p5.48xlarge": 98.32,    # Example price for 8x H100
+        "g5.48xlarge": 16.28,    # Example price for 8x A10G
     }
 
-    if len(sys.argv) != 3:
-        print(f"Usage: python3 {sys.argv[0]} <path_to_llmperf_results_dir> <instance_type>")
-        print(f"Example: python3 {sys.argv[0]} /home/ubuntu/benchmark_result/llmperf/qwen3-8b trn2.48xlarge")
-        print(f"Supported instance types: {', '.join(INSTANCE_PRICES.keys())}")
+    if len(sys.argv) != 4:
+        print(f"Usage: python3 {sys.argv[0]} <path_to_results_dir> <instance_type> <hardware_type>")
+        print(f"Example (Neuron): python3 {sys.argv[0]} /home/ubuntu/benchmark_result/llmperf/qwen3-8b trn2.48xlarge neuron")
+        print(f"Example (NVIDIA): python3 {sys.argv[0]} /home/ubuntu/benchmark_result/llmperf_nvidia/qwen3-8b-nvidia p5.48xlarge nvidia")
+        print(f"Supported hardware types: neuron, nvidia")
         sys.exit(1)
 
     results_directory = sys.argv[1]
     instance_type = sys.argv[2]
+    hardware_type = sys.argv[3].lower()
 
     if not os.path.isdir(results_directory):
         print(f"❌ Error: Directory not found at '{results_directory}'")
@@ -438,12 +441,17 @@ if __name__ == "__main__":
         print(f"   Supported types are: {', '.join(INSTANCE_PRICES.keys())}")
         sys.exit(1)
 
+    if hardware_type not in ["neuron", "nvidia"]:
+        print(f"❌ Error: Unsupported hardware type '{hardware_type}'. Supported types are 'neuron', 'nvidia'.")
+        sys.exit(1)
+
     # This should be read from the config file in a more advanced version
     EXPECTED_CONCURRENCIES = [1, 2, 4, 8, 16, 32, 64, 128]
     hourly_price = INSTANCE_PRICES[instance_type]
 
     print(f"🔍 Parsing results from: {results_directory}")
-    results_df = parse_results(results_directory, EXPECTED_CONCURRENCIES)
+    print(f"   Hardware Type: {hardware_type}, Instance Type: {instance_type} (${hourly_price}/hr)")
+    results_df = parse_results(results_directory, EXPECTED_CONCURRENCIES, hardware_type)
     
     if results_df.empty:
         print("⚠️ No results found to visualize.")
