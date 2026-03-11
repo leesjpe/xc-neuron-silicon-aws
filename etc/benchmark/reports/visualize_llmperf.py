@@ -211,29 +211,34 @@ HTML_TEMPLATE = """
 </html>
 """
 
-def parse_results(results_dir, expected_concurrencies):
+def parse_results(results_dir, expected_concurrencies, hardware_type):
     """
-    Parses all llmperf summary.json files in a directory, returning a pandas DataFrame.
-    It also identifies and marks FAILED and SKIPPED tests.
+    Parses all llmperf summary.json files in a directory.
+    If hardware_type is 'neuron', it checks for compilation status.
+    If 'nvidia', it directly parses the results.
     """
     data = []
-    model_name = os.path.basename(results_dir)
-    compiled_models_base_path = f"/data/compiled_models/{model_name}"
+    model_name_with_suffix = os.path.basename(results_dir.rstrip('/'))
+    # nvidia suffix 제거 (경로 매칭용)
+    model_name = model_name_with_suffix.replace("-nvidia", "")
 
-    if not os.path.isdir(compiled_models_base_path):
-        print(f"❌ Error: Compiled models directory not found at '{compiled_models_base_path}'.")
-        print("   Cannot check for compilation status. Please ensure the path is correct.")
-        sys.exit(1)
-
-    # Get all attempted model configurations from the compilation directory
-    model_config_dirs = sorted(glob.glob(os.path.join(compiled_models_base_path, "*-tp*-bs*-ctx*")))
+    # 1. --- Configuration Discovery ---
+    if hardware_type == "neuron":
+        compiled_models_base_path = f"/data/compiled_models/{model_name}"
+        if not os.path.isdir(compiled_models_base_path):
+            print(f"❌ Error: Compiled models directory not found at '{compiled_models_base_path}'.")
+            sys.exit(1)
+        model_config_dirs = sorted(glob.glob(os.path.join(compiled_models_base_path, "*-tp*-bs*-ctx*")))
+    else:
+        # NVIDIA 환경: 결과 폴더 자체에서 설정 디렉토리들을 찾음
+        model_config_dirs = sorted(glob.glob(os.path.join(results_dir, "*-tp*-bs*-ctx*")))
 
     if not model_config_dirs:
-        print(f"⚠️ Warning: No compiled model configurations found in '{compiled_models_base_path}'.")
+        print(f"⚠️ Warning: No result directories found in '{results_dir if hardware_type == 'nvidia' else compiled_models_base_path}'.")
         return pd.DataFrame()
 
-    for compiled_model_path in model_config_dirs:
-        dir_name = os.path.basename(compiled_model_path)
+    for config_path in model_config_dirs:
+        dir_name = os.path.basename(config_path)
         
         tp_match = re.search(r'tp(\d+)', dir_name)
         bs_match = re.search(r'bs(\d+)', dir_name)
@@ -246,9 +251,11 @@ def parse_results(results_dir, expected_concurrencies):
         bs = int(bs_match.group(1))
         ctx = int(ctx_match.group(1))
 
-        # Check for compilation success
-        compile_success_marker = os.path.join(compiled_model_path, ".compile_success")
-        is_compiled = os.path.exists(compile_success_marker)
+        # 2. --- Status Check ---
+        is_compiled = True
+        if hardware_type == "neuron":
+            compile_success_marker = os.path.join(config_path, ".compile_success")
+            is_compiled = os.path.exists(compile_success_marker)
 
         for conc in expected_concurrencies:
             record = {
@@ -269,20 +276,21 @@ def parse_results(results_dir, expected_concurrencies):
                 data.append(record)
                 continue
 
-            if conc > bs:
+            # NVIDIA는 bs 체크를 건너뛰거나 느슨하게 적용 (vLLM이 동적으로 처리하므로)
+            if hardware_type == "neuron" and conc > bs:
                 record["status"] = "SKIPPED"
                 data.append(record)
                 continue
 
-            # Path to the actual benchmark results
-            model_results_dir = os.path.join(results_dir, dir_name)
-            test_dir = os.path.join(model_results_dir, f"llmperf_conc{conc}_in1024_out256")
+            # 3. --- Parse JSON ---
+            # NVIDIA일 경우 config_path 자체가 결과 폴더임
+            model_results_base = results_dir if hardware_type == "neuron" else results_dir
+            test_dir = os.path.join(results_dir, dir_name, f"llmperf_conc{conc}_in1024_out256")
             
-            # Look for any summary file, to be robust against llmperf's naming scheme.
             summary_files = glob.glob(os.path.join(test_dir, "*_summary.json"))
 
             if summary_files:
-                summary_file = summary_files[0] # Take the first one found
+                summary_file = summary_files[0]
                 try:
                     with open(summary_file, 'r') as f:
                         summary_data = json.load(f)
@@ -294,18 +302,14 @@ def parse_results(results_dir, expected_concurrencies):
                         "tpot_p50_ms": summary_data.get("results_inter_token_latency_s_quantiles_p50", 0) * 1000,
                         "status": "SUCCESS"
                     })
-                except (json.JSONDecodeError, KeyError):
+                except Exception:
                     record["status"] = "FAILED"
             else:
-                record["status"] = "FAILED" # Test ran but produced no summary.json
+                record["status"] = "N/A" # 아직 테스트 안 함 혹은 결과 없음
             
             data.append(record)
 
-    if not data:
-        return pd.DataFrame()
-
-    df = pd.DataFrame(data)
-    return df.sort_values(by=["tp", "bs", "concurrency"]).reset_index(drop=True)
+    return pd.DataFrame(data)
 
 def create_plots(df):
     """
@@ -419,6 +423,7 @@ if __name__ == "__main__":
         "inf2.48xlarge": 12.98,
         "p5.48xlarge": 98.32,    # Example price for 8x H100
         "g5.48xlarge": 16.28,    # Example price for 8x A10G
+        "g6.48xlarge": 16.41,    # 8 x L4 ICN
     }
 
     if len(sys.argv) != 4:
