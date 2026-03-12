@@ -25,7 +25,16 @@ echo
 
 # 2. --- Setup Result Directory ---
 RESULTS_BASE_DIR="/home/ubuntu/benchmark_result"
-TEST_RUN_DIR="${RESULTS_BASE_DIR}/llmperf_nvidia/${MODEL_NAME}"
+
+# 컨피그에 EXPERIMENT_NAME이 없으면 임시로 타임스탬프를 사용
+if [ -z "$EXPERIMENT_NAME" ]; then
+    EXPERIMENT_NAME=$(date +"%Y%m%d_%H%M%S")
+    echo "⚠️ EXPERIMENT_NAME not set in config. Using timestamp: $EXPERIMENT_NAME"
+fi
+
+# NVIDIA 스크립트라면: 
+TEST_RUN_DIR="${RESULTS_BASE_DIR}/llmperf_nvidia/${MODEL_NAME}/${EXPERIMENT_NAME}"
+
 mkdir -p "$TEST_RUN_DIR"
 echo "📊 Saving all results to: $TEST_RUN_DIR"
 echo
@@ -42,7 +51,7 @@ echo "✅ Found llmperf script: $LLMPERF_SCRIPT"
 
 # 4. --- Main Loop ---
 TOTAL_CONCURRENCIES=$(echo "$LLMPERF_CONCURRENCIES" | wc -w)
-TOTAL_VARIATIONS=$(echo "$LLMPERF_VARIATIONS" | wc -l)
+TOTAL_VARIATIONS=${#LLMPERF_VARIATIONS[@]}
 TOTAL_JOBS=$(( $(echo "$TP_DEGREES" | wc -w) * $(echo "$BATCH_SIZES" | wc -w) * TOTAL_CONCURRENCIES * TOTAL_VARIATIONS ))
 CURRENT_JOB=0
 
@@ -58,6 +67,34 @@ for tp in $TP_DEGREES; do
         # Create a subdirectory for this specific model configuration's results
         MODEL_RESULTS_DIR="${TEST_RUN_DIR}/${dir_name}"
         mkdir -p "$MODEL_RESULTS_DIR"
+
+        # =================================================================
+        # --- [추가됨] Pre-check: 서버 띄우기 전에 이미 완료된 테스트인지 확인 ---
+        # =================================================================
+        all_tests_done=true
+        for conc_check in $LLMPERF_CONCURRENCIES; do
+            if [ "$conc_check" -gt "$bs" ]; then
+                continue
+            fi
+            for variation_check in "${LLMPERF_VARIATIONS[@]}"; do
+                IFS=' ' read -r mean_in_check std_in_check mean_out_check std_out_check <<< "$variation_check"
+                test_name_check="conc${conc_check}_in${mean_in_check}_out${mean_out_check}"
+                result_dir_check="${MODEL_RESULTS_DIR}/llmperf_${test_name_check}"
+
+                # 하나라도 결과 파일이 없으면 전부 완료된 것이 아님
+                if ! ls "${result_dir_check}"/*_summary.json 1> /dev/null 2>&1; then
+                    all_tests_done=false
+                    break 2
+                fi
+            done
+        done
+
+        if [ "$all_tests_done" = true ]; then
+            echo "   ✅ All tests for model configuration '$dir_name' are already complete. Skipping server startup."
+            echo
+            continue
+        fi
+        # =================================================================
 
         # --- Start Server ---
         echo "1. Stopping any existing server..."
@@ -98,6 +135,51 @@ for tp in $TP_DEGREES; do
             pkill -f "vllm.entrypoints.openai.api_server" 2>/dev/null || true
             continue # Skip to the next configuration
         fi
+
+        # =================================================================
+        # --- [추가됨] 3.5. WARM-UP (Cold-Start 방지 및 공정성 확보) ---
+        # =================================================================
+        echo "   3.5 Warming up the model to ensure fair comparison..."
+        
+        # 컨피그의 첫 번째 VARIATION 설정을 가져와서 웜업에 사용 (현재 1024 0 256 0)
+        first_variation="${LLMPERF_VARIATIONS[0]}"
+        IFS=' ' read -r warm_in warm_std_in warm_out warm_std_out <<< "$first_variation"
+
+        # Python을 이용해 설정된 토큰 길이에 맞는 더미 요청을 vLLM에 전송
+        python3 -c "
+import urllib.request
+import urllib.error
+import json
+import time
+
+# 단어 하나가 대략 1~1.5 토큰임을 감안하여 입력 길이(warm_in)만큼 텍스트 생성
+prompt_text = 'hello world ' * (int($warm_in) // 2)
+
+data = json.dumps({
+    'model': '$MODEL_NAME',
+    'prompt': prompt_text,
+    'max_tokens': int($warm_out),
+    'temperature': 0.0
+}).encode('utf-8')
+
+req = urllib.request.Request(
+    'http://localhost:8000/v1/completions',
+    data=data,
+    headers={'Content-Type': 'application/json', 'Authorization': 'Bearer dummy'}
+)
+
+try:
+    print(f'      - Sending dummy request (Target Input: {$warm_in}, Target Output: {$warm_out})...')
+    start_time = time.time()
+    with urllib.request.urlopen(req, timeout=300) as response:
+        response.read()
+    elapsed = time.time() - start_time
+    print(f'      ✅ Warm-up complete! (Took {elapsed:.2f} seconds)')
+except urllib.error.URLError as e:
+    print(f'      ⚠️ Warm-up request failed, but continuing benchmark. Error: {e}')
+"
+        # =================================================================
+
 
         # --- Run Benchmarks ---
         for conc in $LLMPERF_CONCURRENCIES; do

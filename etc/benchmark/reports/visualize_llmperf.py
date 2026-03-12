@@ -218,7 +218,10 @@ def parse_results(results_dir, expected_concurrencies, hardware_type):
     If 'nvidia', it directly parses the results.
     """
     data = []
-    model_name_with_suffix = os.path.basename(results_dir.rstrip('/'))
+    # --- [수정됨] 경로에서 실험명과 모델명 분리 추출 ---
+    norm_path = os.path.normpath(results_dir)
+    experiment_name = os.path.basename(norm_path) # 예: warmup_test_ctx4096
+    model_name_with_suffix = os.path.basename(os.path.dirname(norm_path)) # 예: qwen3-8b-nvidia
     # nvidia suffix 제거 (경로 매칭용)
     model_name = model_name_with_suffix.replace("-nvidia", "")
 
@@ -285,9 +288,8 @@ def parse_results(results_dir, expected_concurrencies, hardware_type):
             # 3. --- Parse JSON ---
             # NVIDIA일 경우 config_path 자체가 결과 폴더임
             model_results_base = results_dir if hardware_type == "neuron" else results_dir
-            test_dir = os.path.join(results_dir, dir_name, f"llmperf_conc{conc}_in1024_out256")
-            
-            summary_files = glob.glob(os.path.join(test_dir, "*_summary.json"))
+            # in1024_out256 처럼 고정하지 않고, 해당 conc를 포함하는 모든 폴더에서 _summary.json을 찾음
+            summary_files = glob.glob(os.path.join(results_dir, dir_name, f"llmperf_conc{conc}_*", "*_summary.json"))
 
             if summary_files:
                 summary_file = summary_files[0]
@@ -399,8 +401,12 @@ def generate_html_report(df, plots, output_dir, instance_type):
     else:
         summary_table = "<p>No valid llmperf results found to display.</p>"
 
-    model_name = os.path.basename(output_dir)
-    report_title = f"LLMPerf Benchmark Report ({model_name} on {instance_type})"
+    # --- [수정됨] 리포트 제목과 파일명에 실험 이름 추가 ---
+    norm_path = os.path.normpath(output_dir)
+    experiment_name = os.path.basename(norm_path)
+    model_name = os.path.basename(os.path.dirname(norm_path))
+
+    report_title = f"LLMPerf Report: {model_name} ({experiment_name} | {instance_type})"
     
     rendered_html = template.render(
         report_title=report_title,
@@ -408,7 +414,8 @@ def generate_html_report(df, plots, output_dir, instance_type):
         **plots
     )
 
-    report_filename = f"llmperf_report_{model_name}_{instance_type}.html"
+    # 파일명도 덮어써지지 않게 실험명을 포함하여 저장
+    report_filename = f"llmperf_report_{model_name}_{experiment_name}_{instance_type}.html"
     report_path = os.path.join(output_dir, report_filename)
     with open(report_path, 'w') as f:
         f.write(rendered_html)
