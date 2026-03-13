@@ -426,8 +426,9 @@ if __name__ == "__main__":
     # --- Instance Prices (On-Demand, us-east-1, as of Feb 2026) ---
     # This can be expanded with more instance types.
     INSTANCE_PRICES = {
-        "trn2.48xlarge": 35.7608,
-        "inf2.48xlarge": 12.98,
+        "trn2.3xlarge": 2.235,    # CB, Melbourne
+        "trn2.48xlarge": 35.7608, # CB, Ohio
+        "inf2.48xlarge": 12.98,   # CD, Ohio
         "p5.48xlarge": 98.32,    # Example price for 8x H100
         "g5.48xlarge": 16.28,    # Example price for 8x A10G
         "g6.48xlarge": 16.41,    # 8 x L4 ICN
