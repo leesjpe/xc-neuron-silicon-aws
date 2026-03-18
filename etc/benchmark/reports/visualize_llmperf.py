@@ -155,7 +155,6 @@ HTML_TEMPLATE = """
             table.querySelectorAll("th").forEach(th => th.classList.remove("th-sort-asc", "th-sort-desc"));
         });
 
-        // Initial sort by cost (ascending)
         function performInitialSort() {
             const headers = Array.from(table.querySelectorAll('th'));
             const costColumnIndex = headers.findIndex(th => th.textContent.trim() === 'cost_per_1m_tokens');
@@ -167,7 +166,6 @@ HTML_TEMPLATE = """
         }
         performInitialSort();
 
-        // Highlighting functionality
         const plotDivs = document.querySelectorAll('.plot > div');
         let highlightedTraceName = null;
 
@@ -178,17 +176,14 @@ HTML_TEMPLATE = """
             const modelConfig = row.cells[0].textContent.trim();
             const isCurrentlyHighlighted = row.classList.contains('highlighted');
 
-            // Clear previous highlights
             tBody.querySelectorAll('tr.highlighted').forEach(r => r.classList.remove('highlighted'));
 
             if (isCurrentlyHighlighted) {
-                // Un-highlight
                 highlightedTraceName = null;
                 plotDivs.forEach(div => {
                     Plotly.restyle(div, { 'line.width': 2, opacity: 1.0 });
                 });
             } else {
-                // Highlight new row
                 highlightedTraceName = modelConfig;
                 row.classList.add('highlighted');
                 plotDivs.forEach(div => {
@@ -211,21 +206,45 @@ HTML_TEMPLATE = """
 </html>
 """
 
+def parse_bash_config(config_path):
+    config_vars = {}
+    if not os.path.exists(config_path):
+        print(f"❌ Error: Config file '{config_path}' not found.")
+        sys.exit(1)
+
+    with open(config_path, 'r') as f:
+        content = f.read()
+
+    # 'export ' 제거
+    content = re.sub(r'^export\s+', '', content, flags=re.MULTILINE)
+
+    # JSON 블록 추출
+    json_match = re.search(r'INSTANCE_PRICING_JSON\s*=\s*(["\'])(.*?)\1', content, re.DOTALL)
+    if json_match:
+        config_vars["INSTANCE_PRICING_JSON"] = json_match.group(2)
+        content = content[:json_match.start()] + content[json_match.end():]
+
+    # 나머지 파싱
+    for line in content.splitlines():
+        line = line.strip()
+        if not line or line.startswith('#'):
+            continue
+        
+        if '=' in line:
+            key, val = line.split('=', 1)
+            key = key.strip()
+            val = val.strip(' "\'')
+            config_vars[key] = val
+
+    return config_vars
+
 def parse_results(results_dir, expected_concurrencies, hardware_type):
-    """
-    Parses all llmperf summary.json files in a directory.
-    If hardware_type is 'neuron', it checks for compilation status.
-    If 'nvidia', it directly parses the results.
-    """
     data = []
-    # --- [수정됨] 경로에서 실험명과 모델명 분리 추출 ---
     norm_path = os.path.normpath(results_dir)
-    experiment_name = os.path.basename(norm_path) # 예: warmup_test_ctx4096
-    model_name_with_suffix = os.path.basename(os.path.dirname(norm_path)) # 예: qwen3-8b-nvidia
-    # nvidia suffix 제거 (경로 매칭용)
+    experiment_name = os.path.basename(norm_path)
+    model_name_with_suffix = os.path.basename(os.path.dirname(norm_path))
     model_name = model_name_with_suffix.replace("-nvidia", "")
 
-    # 1. --- Configuration Discovery ---
     if hardware_type == "neuron":
         compiled_models_base_path = f"/data/compiled_models/{model_name}"
         if not os.path.isdir(compiled_models_base_path):
@@ -233,7 +252,6 @@ def parse_results(results_dir, expected_concurrencies, hardware_type):
             sys.exit(1)
         model_config_dirs = sorted(glob.glob(os.path.join(compiled_models_base_path, "*-tp*-bs*-ctx*")))
     else:
-        # NVIDIA 환경: 결과 폴더 자체에서 설정 디렉토리들을 찾음
         model_config_dirs = sorted(glob.glob(os.path.join(results_dir, "*-tp*-bs*-ctx*")))
 
     if not model_config_dirs:
@@ -254,7 +272,6 @@ def parse_results(results_dir, expected_concurrencies, hardware_type):
         bs = int(bs_match.group(1))
         ctx = int(ctx_match.group(1))
 
-        # 2. --- Status Check ---
         is_compiled = True
         if hardware_type == "neuron":
             compile_success_marker = os.path.join(config_path, ".compile_success")
@@ -279,16 +296,11 @@ def parse_results(results_dir, expected_concurrencies, hardware_type):
                 data.append(record)
                 continue
 
-            # NVIDIA는 bs 체크를 건너뛰거나 느슨하게 적용 (vLLM이 동적으로 처리하므로)
             if hardware_type == "neuron" and conc > bs:
                 record["status"] = "SKIPPED"
                 data.append(record)
                 continue
 
-            # 3. --- Parse JSON ---
-            # NVIDIA일 경우 config_path 자체가 결과 폴더임
-            model_results_base = results_dir if hardware_type == "neuron" else results_dir
-            # in1024_out256 처럼 고정하지 않고, 해당 conc를 포함하는 모든 폴더에서 _summary.json을 찾음
             summary_files = glob.glob(os.path.join(results_dir, dir_name, f"llmperf_conc{conc}_*", "*_summary.json"))
 
             if summary_files:
@@ -307,16 +319,13 @@ def parse_results(results_dir, expected_concurrencies, hardware_type):
                 except Exception:
                     record["status"] = "FAILED"
             else:
-                record["status"] = "N/A" # 아직 테스트 안 함 혹은 결과 없음
+                record["status"] = "N/A"
             
             data.append(record)
 
     return pd.DataFrame(data)
 
 def create_plots(df):
-    """
-    Generates plotly figures from the benchmark data.
-    """
     if df.empty:
         return {}
 
@@ -325,7 +334,6 @@ def create_plots(df):
     df_success = df_sorted[df_sorted['status'] == 'SUCCESS']
 
     if not df_success.empty:
-        # Plot 1: Throughput vs. Concurrency
         fig_throughput = px.line(
             df_success, x='concurrency', y='throughput_tokens_per_s', color='model_config', markers=True,
             title='LLMPerf: Throughput vs. Concurrency (Higher is Better)',
@@ -334,7 +342,6 @@ def create_plots(df):
         fig_throughput.update_xaxes(type='linear', tickvals=df_success['concurrency'].unique())
         plots['throughput_fig'] = fig_throughput.to_html(full_html=False, include_plotlyjs='cdn')
 
-        # Plot 2: P50 End-to-End Latency vs. Concurrency
         fig_e2e = px.line(
             df_success, x='concurrency', y='e2e_latency_p50_ms', color='model_config', markers=True,
             title='LLMPerf: Median End-to-End Latency vs. Concurrency (Lower is Better)',
@@ -343,7 +350,6 @@ def create_plots(df):
         fig_e2e.update_xaxes(type='linear', tickvals=df_success['concurrency'].unique())
         plots['e2e_latency_fig'] = fig_e2e.to_html(full_html=False, include_plotlyjs=False)
 
-        # Plot 3: P50 TTFT vs. Concurrency
         fig_ttft = px.line(
             df_success, x='concurrency', y='ttft_p50_ms', color='model_config', markers=True,
             title='LLMPerf: Median Time to First Token (TTFT) vs. Concurrency (Lower is Better)',
@@ -352,7 +358,6 @@ def create_plots(df):
         fig_ttft.update_xaxes(type='linear', tickvals=df_success['concurrency'].unique())
         plots['ttft_fig'] = fig_ttft.to_html(full_html=False, include_plotlyjs=False)
 
-        # Plot 4: P50 TPOT vs. Concurrency
         fig_tpot = px.line(
             df_success, x='concurrency', y='tpot_p50_ms', color='model_config', markers=True,
             title='LLMPerf: Median Inter-Token Latency (TPOT) vs. Concurrency (Lower is Better)',
@@ -361,7 +366,6 @@ def create_plots(df):
         fig_tpot.update_xaxes(type='linear', tickvals=df_success['concurrency'].unique())
         plots['tpot_fig'] = fig_tpot.to_html(full_html=False, include_plotlyjs=False)
 
-        # Plot 5: Cost per 1M Tokens vs. Concurrency
         if 'cost_per_1m_tokens' in df_success.columns:
             fig_cost = px.line(
                 df_success, x='concurrency', y='cost_per_1m_tokens', color='model_config', markers=True,
@@ -374,14 +378,9 @@ def create_plots(df):
     return plots
 
 def format_status(val):
-    """Applies CSS class based on status for the HTML table."""
     return f'<span class="status-{val}">{val}</span>'
 
-def generate_html_report(df, plots, output_dir, instance_type):
-    """
-    Generates an HTML report from the dataframe and plots.
-    """
-    # Use absolute path for template loader for robustness
+def generate_html_report(df, plots, output_dir, instance_type, target_region, target_billing):
     template_dir = os.path.dirname(os.path.abspath(__file__))
     env = Environment(loader=FileSystemLoader(template_dir))
     template = env.from_string(HTML_TEMPLATE)
@@ -390,7 +389,6 @@ def generate_html_report(df, plots, output_dir, instance_type):
         df_display = df.copy()
         df_display['status'] = df_display['status'].apply(format_status)
         
-        # Round numeric columns for better readability
         for col in ['throughput_tokens_per_s', 'e2e_latency_p50_ms', 'ttft_p50_ms', 'tpot_p50_ms']:
             if col in df_display.columns:
                 df_display[col] = df_display[col].map('{:.2f}'.format, na_action='ignore')
@@ -401,12 +399,12 @@ def generate_html_report(df, plots, output_dir, instance_type):
     else:
         summary_table = "<p>No valid llmperf results found to display.</p>"
 
-    # --- [수정됨] 리포트 제목과 파일명에 실험 이름 추가 ---
     norm_path = os.path.normpath(output_dir)
     experiment_name = os.path.basename(norm_path)
     model_name = os.path.basename(os.path.dirname(norm_path))
 
-    report_title = f"LLMPerf Report: {model_name} ({experiment_name} | {instance_type})"
+    # 리포트 타이틀에 리전과 빌링 정보를 함께 노출
+    report_title = f"LLMPerf Report: {model_name} ({experiment_name} | {instance_type} | {target_region} | {target_billing})"
     
     rendered_html = template.render(
         report_title=report_title,
@@ -414,7 +412,6 @@ def generate_html_report(df, plots, output_dir, instance_type):
         **plots
     )
 
-    # 파일명도 덮어써지지 않게 실험명을 포함하여 저장
     report_filename = f"llmperf_report_{model_name}_{experiment_name}_{instance_type}.html"
     report_path = os.path.join(output_dir, report_filename)
     with open(report_path, 'w') as f:
@@ -423,62 +420,97 @@ def generate_html_report(df, plots, output_dir, instance_type):
     print(f"✅ HTML report generated at: {report_path}")
 
 if __name__ == "__main__":
-    # --- Instance Prices (On-Demand, us-east-1, as of Feb 2026) ---
-    # This can be expanded with more instance types.
-    INSTANCE_PRICES = {
-        "trn2.3xlarge": 2.235,    # CB, Melbourne
-        "trn2.48xlarge": 35.7608, # CB, Ohio
-        "inf2.48xlarge": 12.98,   # CD, Ohio
-        "p5.48xlarge": 98.32,    # Example price for 8x H100
-        "g5.48xlarge": 16.28,    # Example price for 8x A10G
-        "g6.48xlarge": 16.41,    # 8 x L4 ICN
-    }
-
-    if len(sys.argv) != 4:
-        print(f"Usage: python3 {sys.argv[0]} <path_to_results_dir> <instance_type> <hardware_type>")
-        print(f"Example (Neuron): python3 {sys.argv[0]} /home/ubuntu/benchmark_result/llmperf/qwen3-8b trn2.48xlarge neuron")
-        print(f"Example (NVIDIA): python3 {sys.argv[0]} /home/ubuntu/benchmark_result/llmperf_nvidia/qwen3-8b-nvidia p5.48xlarge nvidia")
+    # 총 7개의 인자를 받도록 검증 (sys.argv[0] 포함)
+    if len(sys.argv) != 7:
+        print(f"Usage: python3 {sys.argv[0]} <path_to_results_dir> <instance_type> <hardware_type> <target_region> <target_billing> <path_to_config_file>")
+        print(f"Example (Neuron): python3 {sys.argv[0]} /home/ubuntu/results trn2.48xlarge neuron us-east-1 on-demand config_neuron.sh")
+        print(f"Example (NVIDIA): python3 {sys.argv[0]} /home/ubuntu/results p5.48xlarge nvidia us-west-2 spot config_nvidia.sh")
         print(f"Supported hardware types: neuron, nvidia")
         sys.exit(1)
 
     results_directory = sys.argv[1]
     instance_type = sys.argv[2]
     hardware_type = sys.argv[3].lower()
+    target_region = sys.argv[4]
+    target_billing = sys.argv[5].lower()
+    config_file_path = sys.argv[6]
 
     if not os.path.isdir(results_directory):
         print(f"❌ Error: Directory not found at '{results_directory}'")
-        sys.exit(1)
-    
-    if instance_type not in INSTANCE_PRICES:
-        print(f"❌ Error: Unsupported instance type '{instance_type}'.")
-        print(f"   Supported types are: {', '.join(INSTANCE_PRICES.keys())}")
         sys.exit(1)
 
     if hardware_type not in ["neuron", "nvidia"]:
         print(f"❌ Error: Unsupported hardware type '{hardware_type}'. Supported types are 'neuron', 'nvidia'.")
         sys.exit(1)
 
-    # This should be read from the config file in a more advanced version
+    # --- 1. Config 파싱 ---
+    env_config = parse_bash_config(config_file_path)
+
+    # --- 2. AWS Pricing 사전 처리 ---
+    if "INSTANCE_PRICING_JSON" not in env_config:
+        print(f"❌ Error: 'INSTANCE_PRICING_JSON' not found in {config_file_path}.")
+        sys.exit(1)
+
+    try:
+        pricing_dict = json.loads(env_config["INSTANCE_PRICING_JSON"])
+    except json.JSONDecodeError as e:
+        print(f"❌ Error: Failed to parse 'INSTANCE_PRICING_JSON'. Ensure it is valid JSON. Details: {e}")
+        sys.exit(1)
+
+    # 3단계 딕셔너리 탐색 (인스턴스 > 리전 > 과금방식)
+    try:
+        hourly_price = float(pricing_dict[instance_type][target_region][target_billing])
+        print(f"⚙️ Pricing configured: {instance_type} > {target_region} > {target_billing} = ${hourly_price}/hr")
+    except KeyError as e:
+        print(f"❌ Error: Pricing not found for [{instance_type}][{target_region}][{target_billing}] in INSTANCE_PRICING_JSON.")
+        print(f"   Please add the missing pricing details to your {config_file_path}.")
+        sys.exit(1)
+
+    # --- 3. 하드웨어 유닛 수 (Core / GPU) 파싱 ---
+    total_units = 1  
+    if hardware_type == "neuron":
+        if "NEURON_RT_NUM_CORES" in env_config:
+            total_units = int(env_config["NEURON_RT_NUM_CORES"])
+            print(f"⚙️ Config parsed: NEURON_RT_NUM_CORES = {total_units}")
+        else:
+            print(f"❌ Error: 'NEURON_RT_NUM_CORES' not found in {config_file_path}.")
+            sys.exit(1)
+    elif hardware_type == "nvidia":
+        if "NUM_GPUS" in env_config:
+            total_units = int(env_config["NUM_GPUS"])
+            print(f"⚙️ Config parsed: NUM_GPUS = {total_units}")
+        else:
+            print(f"❌ Error: 'NUM_GPUS' not found in {config_file_path}.")
+            sys.exit(1)
+
     EXPECTED_CONCURRENCIES = [1, 2, 4, 8, 16, 32, 64, 128]
-    hourly_price = INSTANCE_PRICES[instance_type]
 
     print(f"🔍 Parsing results from: {results_directory}")
-    print(f"   Hardware Type: {hardware_type}, Instance Type: {instance_type} (${hourly_price}/hr)")
     results_df = parse_results(results_directory, EXPECTED_CONCURRENCIES, hardware_type)
     
     if results_df.empty:
         print("⚠️ No results found to visualize.")
     else:
-        # --- Calculate Cost per 1M Tokens ---
+        # --- 4. 비율을 적용한 최종 Cost per 1M Tokens 계산 ---
         if 'throughput_tokens_per_s' in results_df.columns and results_df['throughput_tokens_per_s'].notna().any():
-            # Cost per 1M tokens = (price_per_second / tokens_per_second) * 1,000,000
-            results_df['cost_per_1m_tokens'] = results_df.apply(
-                lambda row: (hourly_price / 3600) / row['throughput_tokens_per_s'] * 1_000_000 if pd.notna(row['throughput_tokens_per_s']) and row['throughput_tokens_per_s'] > 0 else None,
-                axis=1
-            )
+            def calculate_cost(row):
+                if pd.isna(row['throughput_tokens_per_s']) or row['throughput_tokens_per_s'] <= 0:
+                    return None
+                
+                tp = row.get('tp', 1)
+                cost_proportion = tp / total_units
+                
+                adjusted_hourly_price = hourly_price * cost_proportion
+                final_cost = (adjusted_hourly_price / 3600) / row['throughput_tokens_per_s'] * 1_000_000
+                
+                print(f"▶ [비용 계산] 모델: {row['model_config']} | 할당 TP: {tp} / 유닛: {total_units} (비율: {cost_proportion:.4f}) | 적용 시급: ${adjusted_hourly_price:.4f} | Cost per 1M: ${final_cost:.4f}")
+                
+                return final_cost
+
+            results_df['cost_per_1m_tokens'] = results_df.apply(calculate_cost, axis=1)
 
         print("📊 Generating plots...")
         plots_html = create_plots(results_df)
         
         print("📄 Generating HTML report...")
-        generate_html_report(results_df, plots_html, results_directory, instance_type)
+        generate_html_report(results_df, plots_html, results_directory, instance_type, target_region, target_billing)

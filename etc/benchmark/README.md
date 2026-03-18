@@ -56,9 +56,10 @@ ls -lht accuracy_results/ | head -5
 
 ### Report generating
 ```
-python visualize_llmperf.py /home/ubuntu/benchmark_result/llmperf/qwen3-8b/warmup_test_ctx4096/ trn2.48xlarge neuron
-python visualize_llmperf.py /home/ubuntu/benchmark_result/llmperf/qwen3-8b/warmup_test_ctx4096/ inf2.48xlarge neuron
-python visualize_llmperf.py /home/ubuntu/benchmark_result/llmperf/qwen3-8b/warmup_test_ctx4096/ g6.48xlarge nvidia
+python visualize_llmperf.py /home/ubuntu/benchmark_result/llmperf/qwen3-8b/warmup_test_ctx4096/ trn2.48xlarge neuron ohio capacity-block ../configs/qwen3-8b.conf
+python visualize_llmperf.py /home/ubuntu/benchmark_result/llmperf/qwen3-8b/warmup_test_ctx4096/ trn2.3xlarge neuron ohio capacity-block ../configs/qwen3-8b.conf
+python visualize_llmperf.py /home/ubuntu/benchmark_result/llmperf/qwen3-8b/warmup_test_ctx4096/ inf2.48xlarge neuron ohio on-demand ../configs/qwen3-8b.conf
+python visualize_llmperf.py /home/ubuntu/benchmark_result/llmperf/qwen3-8b/warmup_test_ctx4096/ g6.48xlarge nvidia ohio on-demand ../configs/qwen3-8b_nvidia.conf
 ```
 
 ## Trouble shooting
