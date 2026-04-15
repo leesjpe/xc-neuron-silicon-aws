@@ -226,7 +226,7 @@ def count_words(text):
 Prompt: def fibonacci(n):
 Output: def fibonacci(n): if n <= 0: return 0 elif n == 1: return 1
 else: return fibonacci(n-1) + fibonacci(n-2)
-```
+
 Write a Python function that calculates the nth Fibonacci number using memoization to optimize the
 ------------------------------------------------------------
 Prompt: 지구온난화의 주요 원인은
